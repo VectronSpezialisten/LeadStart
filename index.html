@@ -190,4 +190,215 @@
       <label for="name">Name</label>
       <input type="text" id="name" name="name" required placeholder="Vor- und Nachname">
 
-      <label
+      <label for="telefon">Telefon</label>
+      <input type="tel" id="telefon" name="telefon" placeholder="+49 ...">
+
+      <label for="email">E-Mail</label>
+      <input type="email" id="email" name="email" placeholder="name@beispiel.de">
+
+      <label for="firma">Name des Unternehmens (Firma / Betriebsstätte)</label>
+      <input type="text" id="firma" name="firma" placeholder="Firmenname oder Gaststätte">
+
+      <label for="betriebsart">Betriebsart</label>
+      <input type="text" id="betriebsart" name="betriebsart" placeholder="z.B. Restaurant, Café, Bäckerei">
+
+      <label for="strasse">Straße</label>
+      <input type="text" id="strasse" name="strasse" placeholder="Straße und Hausnummer">
+
+      <label for="plz">PLZ</label>
+      <input type="text" id="plz" name="plz" placeholder="z.B. 10178">
+
+      <label for="ort">Ort</label>
+      <input type="text" id="ort" name="ort" placeholder="z.B. Berlin (Mitte)">
+
+      <label for="vkcId">VKC-ID</label>
+      <input type="text" id="vkcId" name="vkcId" placeholder="z.B. VKC-11897">
+
+      <label for="vkcUrl">VKC-URL</label>
+      <input type="url" id="vkcUrl" name="vkcUrl" placeholder="Link zur Verkaufschance im Sales Navigator">
+
+      <label for="notizen">Notizen</label>
+      <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
+
+      <button type="submit" id="submitBtn">Prüfen &amp; Recherche starten</button>
+    </form>
+
+    <div class="loading" id="loading">
+      <span class="spinner"></span>Wird gegen weclapp geprüft und recherchiert …
+    </div>
+
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+  const FUNCTION_URL = "/.netlify/functions/leadstart";
+  const STORAGE_KEY = "leadstart_zugang";
+
+  const loginBox = document.getElementById("loginBox");
+  const appContent = document.getElementById("appContent");
+  const topBar = document.getElementById("topBar");
+  const loginError = document.getElementById("loginError");
+  const userEmailDisplay = document.getElementById("userEmailDisplay");
+
+  const form = document.getElementById("leadForm");
+  const submitBtn = document.getElementById("submitBtn");
+  const loading = document.getElementById("loading");
+  const resultDiv = document.getElementById("result");
+
+  function getZugang() {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  function setZugang(email, passwort) {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ email, passwort }));
+  }
+
+  function clearZugang() {
+    sessionStorage.removeItem(STORAGE_KEY);
+  }
+
+  function zeigeApp(email) {
+    loginBox.style.display = "none";
+    appContent.style.display = "block";
+    topBar.style.display = "flex";
+    userEmailDisplay.textContent = email;
+  }
+
+  function zeigeLogin() {
+    loginBox.style.display = "block";
+    appContent.style.display = "none";
+    topBar.style.display = "none";
+  }
+
+  // Beim Laden prüfen, ob schon eine Sitzung besteht
+  const bestehenderZugang = getZugang();
+  if (bestehenderZugang) {
+    zeigeApp(bestehenderZugang.email);
+  } else {
+    zeigeLogin();
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", () => {
+    const email = document.getElementById("loginEmail").value.trim();
+    const passwort = document.getElementById("loginPasswort").value;
+
+    if (!email || !passwort) {
+      loginError.textContent = "Bitte E-Mail und Passwort eingeben.";
+      loginError.style.display = "block";
+      return;
+    }
+
+    // Zugangsdaten merken; die eigentliche Prüfung erfolgt serverseitig
+    // beim ersten tatsächlichen Absenden des Lead-Formulars.
+    loginError.style.display = "none";
+    setZugang(email, passwort);
+    zeigeApp(email);
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    clearZugang();
+    document.getElementById("loginEmail").value = "";
+    document.getElementById("loginPasswort").value = "";
+    zeigeLogin();
+  });
+
+  const confidenceLabel = (c) => {
+    if (c === "hoch") return "sehr sicher";
+    if (c === "mittel") return "möglich";
+    return "unsicher";
+  };
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const zugang = getZugang();
+    if (!zugang) {
+      zeigeLogin();
+      return;
+    }
+
+    submitBtn.disabled = true;
+    loading.style.display = "block";
+    resultDiv.style.display = "none";
+    resultDiv.innerHTML = "";
+
+    const payload = {
+      name: document.getElementById("name").value.trim(),
+      telefon: document.getElementById("telefon").value.trim(),
+      email: document.getElementById("email").value.trim(),
+      firma: document.getElementById("firma").value.trim(),
+      betriebsart: document.getElementById("betriebsart").value.trim(),
+      strasse: document.getElementById("strasse").value.trim(),
+      plz: document.getElementById("plz").value.trim(),
+      ort: document.getElementById("ort").value.trim(),
+      vkcId: document.getElementById("vkcId").value.trim(),
+      vkcUrl: document.getElementById("vkcUrl").value.trim(),
+      notizen: document.getElementById("notizen").value.trim(),
+      erfasserEmail: zugang.email,
+      passwort: zugang.passwort
+    };
+
+    try {
+      const response = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 401) {
+        // Zugangsdaten falsch -> Sitzung verwerfen, zurück zum Login
+        clearZugang();
+        loginError.textContent = "Anmeldung ungültig. Bitte erneut anmelden.";
+        loginError.style.display = "block";
+        zeigeLogin();
+        return;
+      }
+
+      if (!response.ok) throw new Error("Serverfehler: " + response.status);
+
+      const data = await response.json();
+      renderResult(data);
+      form.reset();
+    } catch (err) {
+      resultDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>Die Prüfung konnte nicht durchgeführt werden. (${err.message})</div>`;
+      resultDiv.style.display = "block";
+    } finally {
+      loading.style.display = "none";
+      submitBtn.disabled = false;
+    }
+  });
+
+  function renderResult(data) {
+    let html = "";
+
+    if (data.status === "kein Treffer") {
+      html += `<div class="block neutral"><div class="block-title">👤 Kontakt</div>Kein bestehender Kontakt gefunden — wird neu angelegt.</div>`;
+    } else {
+      const treffer = data.treffer[0];
+      html += `<div class="block warn"><div class="block-title">⚠️ Kontakt möglicherweise vorhanden</div>${treffer.firstName || ""} ${treffer.lastName || ""} (Sicherheit: ${confidenceLabel(treffer.confidence)}). Bitte in weclapp prüfen, bevor neu angelegt wird.</div>`;
+      if (data.anzahl > 1) {
+        html += `<div class="block neutral">Es gibt insgesamt ${data.anzahl} mögliche Kandidaten.</div>`;
+      }
+    }
+
+    if (data.firma) {
+      if (data.firma.status === "kein Treffer") {
+        html += `<div class="block neutral"><div class="block-title">🏢 Firma</div>Keine bestehende Firma gefunden — wird neu angelegt.</div>`;
+      } else {
+        const f = data.firma.treffer[0];
+        html += `<div class="block warn"><div class="block-title">⚠️ Firma möglicherweise vorhanden</div>${f.company || f.company2 || ""}. Bitte in weclapp prüfen.</div>`;
+      }
+    }
+
+    if (data.perplexity) {
+      html += `<div class="block ok"><div class="block-title">🔍 Recherche-Ergebnis (Perplexity)</div>${data.perplexity}<br><em style="opacity:0.8;">Unbestätigte Recherche — bitte im Gespräch verifizieren.</em></div>`;
+    }
+
+    resultDiv.innerHTML = html;
+    resultDiv.style.display = "block";
+  }
+</script>
+
+</body>
+</html>
