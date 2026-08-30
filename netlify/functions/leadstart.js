@@ -2,15 +2,12 @@
 //
 // Benötigte Umgebungsvariablen (in den Netlify Site-Settings unter
 // "Environment variables" eintragen, NIEMALS im Code):
-//   WECLAPP_DOMAIN        z.B. thiedebrauer.weclapp.com
+//   WECLAPP_DOMAIN        z.B. eure-domain.weclapp.com
 //   WECLAPP_API_TOKEN     euer weclapp AuthenticationToken
 //   PERPLEXITY_API_KEY    euer Perplexity API-Key (ohne "Bearer ")
 //   SHARED_PASSWORD       gemeinsames Zugangs-Passwort für alle Nutzer
 //   ALLOWED_EMAILS        erlaubte E-Mail-Adressen, mit Komma getrennt,
 //                         z.B. carsten.brauer@kasse-stimmt.de,anna@kasse-stimmt.de
-//
-// Aufruf vom Frontend: POST /.netlify/functions/leadstart
-// Body: { name, telefon, email, firma, erfasserEmail, passwort }
 
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
 
