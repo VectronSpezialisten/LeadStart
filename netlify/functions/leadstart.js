@@ -5,11 +5,37 @@
 //   WECLAPP_DOMAIN        z.B. thiedebrauer.weclapp.com
 //   WECLAPP_API_TOKEN     euer weclapp AuthenticationToken
 //   PERPLEXITY_API_KEY    euer Perplexity API-Key (ohne "Bearer ")
+//   SHARED_PASSWORD       gemeinsames Zugangs-Passwort für alle Nutzer
+//   ALLOWED_EMAILS        erlaubte E-Mail-Adressen, mit Komma getrennt,
+//                         z.B. carsten.brauer@kasse-stimmt.de,anna@kasse-stimmt.de
 //
 // Aufruf vom Frontend: POST /.netlify/functions/leadstart
-// Body: { name, telefon, email, firma }
+// Body: { name, telefon, email, firma, erfasserEmail, passwort }
 
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
+
+// ---------- Zugangsprüfung ----------
+
+function pruefeZugang(erfasserEmail, passwort) {
+  const sharedPassword = process.env.SHARED_PASSWORD || "";
+  const allowedEmails = (process.env.ALLOWED_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  const emailNormalized = (erfasserEmail || "").trim().toLowerCase();
+
+  if (!sharedPassword || passwort !== sharedPassword) {
+    return { ok: false, grund: "Falsches Passwort." };
+  }
+  if (allowedEmails.length === 0) {
+    return { ok: false, grund: "Keine erlaubten E-Mail-Adressen konfiguriert." };
+  }
+  if (!allowedEmails.includes(emailNormalized)) {
+    return { ok: false, grund: "Diese E-Mail-Adresse ist nicht freigeschaltet." };
+  }
+  return { ok: true };
+}
 
 // ---------- Normalisierung ----------
 
@@ -235,6 +261,17 @@ exports.handler = async (event) => {
   const phoneRaw = body.telefon || "";
   const emailRaw = body.email || "";
   const companyRaw = body.firma || "";
+  const erfasserEmail = body.erfasserEmail || "";
+  const passwort = body.passwort || "";
+
+  const zugang = pruefeZugang(erfasserEmail, passwort);
+  if (!zugang.ok) {
+    return {
+      statusCode: 401,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: zugang.grund })
+    };
+  }
 
   const nameNormalized = normalizeName(nameRaw);
   const emailNormalized = normalizeEmail(emailRaw);
@@ -291,7 +328,8 @@ exports.handler = async (event) => {
         treffer: kontaktErgebnis.treffer,
         firma: firmaErgebnis,
         perplexity: perplexityText,
-        eingabe: { name: nameRaw, telefon: phoneRaw, email: emailRaw, firma: companyRaw }
+        eingabe: { name: nameRaw, telefon: phoneRaw, email: emailRaw, firma: companyRaw },
+        erfasstVon: erfasserEmail
       })
     };
   } catch (err) {
