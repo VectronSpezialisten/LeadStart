@@ -8,6 +8,9 @@
 //   SHARED_PASSWORD       gemeinsames Zugangs-Passwort für alle Nutzer
 //   ALLOWED_EMAILS        erlaubte E-Mail-Adressen, mit Komma getrennt,
 //                         z.B. carsten.brauer@kasse-stimmt.de,anna@kasse-stimmt.de
+//
+// Aufruf vom Frontend: POST /.netlify/functions/leadstart
+// Body: { name, telefon, email, firma, betriebsart, strasse, plz, ort, vkcId, vkcUrl, notizen, erfasserEmail, passwort }
 
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
 
@@ -258,6 +261,13 @@ exports.handler = async (event) => {
   const phoneRaw = body.telefon || "";
   const emailRaw = body.email || "";
   const companyRaw = body.firma || "";
+  const betriebsart = body.betriebsart || "";
+  const strasse = body.strasse || "";
+  const plz = body.plz || "";
+  const ort = body.ort || "";
+  const vkcId = body.vkcId || "";
+  const vkcUrl = body.vkcUrl || "";
+  const notizen = body.notizen || "";
   const erfasserEmail = body.erfasserEmail || "";
   const passwort = body.passwort || "";
 
@@ -325,7 +335,19 @@ exports.handler = async (event) => {
         treffer: kontaktErgebnis.treffer,
         firma: firmaErgebnis,
         perplexity: perplexityText,
-        eingabe: { name: nameRaw, telefon: phoneRaw, email: emailRaw, firma: companyRaw },
+        eingabe: {
+          name: nameRaw,
+          telefon: phoneRaw,
+          email: emailRaw,
+          firma: companyRaw,
+          betriebsart,
+          strasse,
+          plz,
+          ort,
+          vkcId,
+          vkcUrl,
+          notizen
+        },
         erfasstVon: erfasserEmail
       })
     };
