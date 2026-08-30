@@ -161,6 +161,11 @@ function auswertenFirma(sources) {
 // ---------- Perplexity ----------
 
 async function perplexityRecherche(name, firma) {
+  // Solange kein Key hinterlegt ist: sauber überspringen, kein Fehler, kein Blockieren des restlichen Ergebnisses.
+  if (!process.env.PERPLEXITY_API_KEY) {
+    return "Recherche noch nicht aktiviert (kein Perplexity-API-Key hinterlegt).";
+  }
+
   const prompt = `Recherchiere zu folgenden Angaben aus einem Vertriebs-Lead:
 Name: ${name || "unbekannt"}
 Firma/Betriebsstätte: ${firma || "unbekannt"}
@@ -169,24 +174,29 @@ Falls es sich um eine Gaststätte handelt, ermittle den Betreiber/die Firma dahi
 Falls es sich um eine Firma handelt, ermittle die zugehörige Gaststätte/Betriebsstätte, falls es eine gibt.
 Gib eine kurze, prägnante Einschätzung (max. 4 Sätze) inkl. Rolle der genannten Person (z.B. Geschäftsführer, Inhaber), und kennzeichne unsichere Angaben deutlich als Vermutung.`;
 
-  const response = await fetch("https://api.perplexity.ai/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "sonar",
-      messages: [{ role: "user", content: prompt }]
-    })
-  });
+  try {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.PERPLEXITY_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "sonar-pro",
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
 
-  if (!response.ok) {
-    return "Recherche konnte nicht durchgeführt werden (Perplexity-API-Fehler).";
+    if (!response.ok) {
+      return "Recherche konnte nicht durchgeführt werden (Perplexity-API-Fehler).";
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || "Keine Recherche möglich.";
+  } catch (err) {
+    // Netzwerkfehler o.ä. sollen den restlichen Duplikat-Check nicht zu Fall bringen.
+    return "Recherche konnte nicht durchgeführt werden (technischer Fehler).";
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || "Keine Recherche möglich.";
 }
 
 // ---------- Handler ----------
