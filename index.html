@@ -195,6 +195,7 @@
     margin: 0;
     font-weight: 400;
     font-size: 14px;
+    line-height: 1.6;
     color: inherit;
     cursor: pointer;
   }
@@ -491,11 +492,15 @@
     } else {
       let optionenHtml = "";
       data.treffer.forEach((t, i) => {
-        const kontaktInfo = [t.email, t.telefon].filter(Boolean).join(" · ");
+        const zeilen = [
+          `${t.firstName || ""} ${t.lastName || ""}`.trim(),
+          t.email || "",
+          t.telefon || ""
+        ].filter(Boolean).join("<br>");
         optionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="kontaktAuswahl" id="kontakt_${i}" value="${t.id}">
-            <label for="kontakt_${i}">${t.firstName || ""} ${t.lastName || ""}${kontaktInfo ? ` <em>(${kontaktInfo})</em>` : ""} <em>— Sicherheit: ${confidenceLabel(t.confidence)}</em></label>
+            <label for="kontakt_${i}">${zeilen}<br><em>Sicherheit: ${confidenceLabel(t.confidence)}</em></label>
           </div>`;
       });
       optionenHtml += `
@@ -568,10 +573,11 @@
       let firmaOptionenHtml = "";
       data.firma.treffer.forEach((f, i) => {
         const adresseText = [f.strasse, [f.plz, f.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+        const zeilen = [f.company || f.company2 || "", adresseText].filter(Boolean).join("<br>");
         firmaOptionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
-            <label for="firma_${i}">${f.company || f.company2 || ""}${adresseText ? ` <em>(${adresseText})</em>` : ""}</label>
+            <label for="firma_${i}">${zeilen}<br><em>Sicherheit: ${confidenceLabel(f.confidence)}</em></label>
           </div>`;
       });
       firmaOptionenHtml += `
