@@ -258,8 +258,11 @@
       <!-- Block: Kontakt -->
       <div class="block-heading">Kontakt</div>
 
-      <label class="first-in-block" for="name">Name</label>
-      <input type="text" id="name" name="name" required placeholder="Vor- und Nachname">
+      <label class="first-in-block" for="vorname">Vorname</label>
+      <input type="text" id="vorname" name="vorname" placeholder="z.B. Karsten">
+
+      <label for="nachname">Nachname</label>
+      <input type="text" id="nachname" name="nachname" required placeholder="z.B. Brauer">
 
       <label for="email">E-Mail</label>
       <input type="email" id="email" name="email" placeholder="name@beispiel.de">
@@ -418,7 +421,8 @@
 
   function sammleFormularDaten() {
     return {
-      name: document.getElementById("name").value.trim(),
+      vorname: document.getElementById("vorname").value.trim(),
+      nachname: document.getElementById("nachname").value.trim(),
       telefon: document.getElementById("telefon").value.trim(),
       email: document.getElementById("email").value.trim(),
       firma: document.getElementById("firma").value.trim(),
@@ -647,7 +651,7 @@
       kontaktEmail = kontaktWahl.kandidat.email || "";
       kontaktTelefon = kontaktWahl.kandidat.telefon || "";
     } else {
-      kontaktName = daten.name;
+      kontaktName = [daten.vorname, daten.nachname].filter(Boolean).join(" ").trim();
       kontaktEmail = daten.email;
       kontaktTelefon = daten.telefon;
     }
