@@ -387,12 +387,19 @@ async function weclappGetById(path) {
   return response.json();
 }
 
-// Neuen Kontakt (Person) anlegen. Bewusst nur ein Namensfeld (firstName) befuellt,
-// kein Split in Vor-/Nachname, wie im Lead-Prozess an anderer Stelle schon festgelegt.
-async function kontaktAnlegen({ name, telefon, email }) {
+// Neuen Kontakt (Person) anlegen. Vorname und Nachname werden getrennt erfasst
+// (Quelle: Vectron Sales Navigator liefert sie ebenfalls getrennt) und direkt
+// in die echten firstName/lastName-Felder uebernommen. Fallback: falls aus
+// irgendeinem Grund kein Nachname vorliegt, wandert der Vorname ersatzweise
+// nach lastName, da weclapp dieses Feld zwingend nicht-leer verlangt.
+async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
+  const lastNameWert = nachname || vorname || "";
+  const firstNameWert = nachname ? (vorname || "") : "";
+
   const payload = {
     partyType: "PERSON",
-    firstName: name || "",
+    firstName: firstNameWert,
+    lastName: lastNameWert,
     customerBusinessType: "B2C",
     ...standardPartyFelder()
   };
@@ -640,7 +647,9 @@ exports.handler = async (event) => {
     };
   }
 
-  const nameRaw = body.name || "";
+  const vornameRaw = body.vorname || "";
+  const nachnameRaw = body.nachname || "";
+  const vollerName = [vornameRaw, nachnameRaw].filter(Boolean).join(" ").trim();
   const phoneRaw = body.telefon || "";
   const emailRaw = body.email || "";
   const companyRaw = body.firma || "";
@@ -676,7 +685,7 @@ exports.handler = async (event) => {
       if (kontaktAuswahl.modus === "vorhanden" && kontaktAuswahl.partyId) {
         kontaktId = kontaktAuswahl.partyId;
       } else {
-        kontaktId = await kontaktAnlegen({ name: nameRaw, telefon: phoneRaw, email: emailRaw });
+        kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw });
       }
 
       let firmaId;
@@ -716,7 +725,7 @@ exports.handler = async (event) => {
           ticket = await ticketAnlegen({
             partyId: firmaId,
             contactId: kontaktId,
-            subject: companyRaw || nameRaw,
+            subject: companyRaw || vollerName,
             beschreibung: beschreibung + `<br><br><i>Hinweis: Ticketnummer "${ticketNummer}" wurde nicht gefunden, neues Ticket wurde stattdessen angelegt.</i>`,
             solutionDueDate,
             vkcId,
@@ -729,7 +738,7 @@ exports.handler = async (event) => {
         ticket = await ticketAnlegen({
           partyId: firmaId,
           contactId: kontaktId,
-          subject: companyRaw || nameRaw,
+          subject: companyRaw || vollerName,
           beschreibung,
           solutionDueDate,
           vkcId,
@@ -761,7 +770,7 @@ exports.handler = async (event) => {
   }
 
   // ---------- Action: check (Standardverhalten, bisherige Logik) ----------
-  const nameNormalized = normalizeName(nameRaw);
+  const nameNormalized = normalizeName(vollerName);
   const emailNormalized = normalizeEmail(emailRaw);
   const phoneNormalized = normalizePhone(phoneRaw);
   const companyNormalized = normalizeCompanyName(companyRaw);
@@ -825,7 +834,7 @@ exports.handler = async (event) => {
       benoetigteFirmaFelder
     );
 
-    const perplexityText = await perplexityRecherche(nameRaw, companyRaw);
+    const perplexityText = await perplexityRecherche(vollerName, companyRaw);
 
     return {
       statusCode: 200,
@@ -837,7 +846,8 @@ exports.handler = async (event) => {
         firma: firmaErgebnis,
         perplexity: perplexityText,
         eingabe: {
-          name: nameRaw,
+          vorname: vornameRaw,
+          nachname: nachnameRaw,
           telefon: phoneRaw,
           email: emailRaw,
           firma: companyRaw,
