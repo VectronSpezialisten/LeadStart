@@ -179,6 +179,9 @@ function auswertenKontakt(sources) {
     };
   });
 
+  // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
+  treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
+
   let status;
   if (treffer.length === 0) status = "kein Treffer";
   else if (treffer.length === 1) status = "eindeutiger Treffer";
@@ -214,6 +217,9 @@ function auswertenFirma(sources) {
       confidence: firmaKonfidenz(matchedFields)
     };
   });
+
+  // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
+  treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
 
   let status;
   if (treffer.length === 0) status = "kein Treffer";
@@ -544,14 +550,24 @@ async function sucheNachPlz(plz) {
 }
 
 // Konfidenz fuer Firmen-Treffer nach fester Prioritaet (von sicher zu unsicher):
-// 1. Strasse + PLZ + Ort  -> hoch
-// 2. Strasse + Ort + Name -> mittel
-// 3. Ort + Name (oder alles Schwaechere, z.B. nur Name) -> niedrig
+// 1. Strasse + PLZ + Ort   -> hoch
+// 2. Name + PLZ            -> hoch (spezifische Kombination: konkreter Name + exakte PLZ)
+// 3. Strasse + Ort + Name  -> mittel
+// 4. Ort + Name            -> niedrig (alles Schwaechere, z.B. nur Name, ebenfalls niedrig)
 function firmaKonfidenz(matchedFields) {
   const hat = (f) => matchedFields.includes(f);
   if (hat("strasse") && hat("plz") && hat("ort")) return "hoch";
+  if (hat("name") && hat("plz")) return "hoch";
   if (hat("strasse") && hat("ort") && hat("name")) return "mittel";
+  if (hat("ort") && hat("name")) return "mittel";
   return "niedrig";
+}
+
+// Numerischer Rang je Konfidenzstufe, fuer die Sortierung (hoch zuerst).
+function konfidenzRang(konfidenz) {
+  if (konfidenz === "hoch") return 3;
+  if (konfidenz === "mittel") return 2;
+  return 1;
 }
 
 // ---------- Handler ----------
