@@ -47,6 +47,17 @@
     font-size: 14px;
     margin: 0 0 28px;
   }
+  .block-heading {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--gray-500);
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--gray-300);
+  }
+  .block-heading:first-of-type { margin-top: 0; }
   label {
     display: block;
     font-size: 13px;
@@ -55,7 +66,7 @@
     margin-top: 18px;
     color: var(--gray-700);
   }
-  label:first-of-type { margin-top: 0; }
+  label.first-in-block { margin-top: 0; }
   input {
     width: 100%;
     padding: 10px 12px;
@@ -73,10 +84,6 @@
     font-family: inherit;
     resize: vertical;
   }
-  input:focus, textarea:focus, select:focus {
-    outline: none;
-    border-color: var(--gray-700);
-  }
   select {
     width: 100%;
     padding: 10px 12px;
@@ -86,9 +93,13 @@
     font-family: inherit;
     background: var(--white);
   }
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--gray-700);
+  }
   button {
     width: 100%;
-    margin-top: 28px;
+    margin-top: 18px;
     padding: 12px;
     background: var(--gray-950);
     color: var(--white);
@@ -97,6 +108,9 @@
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
+  }
+  button.secondary {
+    background: var(--gray-700);
   }
   button:disabled {
     background: var(--gray-300);
@@ -111,14 +125,10 @@
     font-size: 13px;
     margin-top: 16px;
   }
-  #result {
-    margin-top: 24px;
-    display: none;
-  }
   .block {
     padding: 14px 16px;
     border-radius: 8px;
-    margin-bottom: 12px;
+    margin-top: 12px;
     font-size: 14px;
     line-height: 1.5;
   }
@@ -132,16 +142,16 @@
   .ok { background: var(--green-bg); color: var(--green); }
   .warn { background: var(--amber-bg); color: var(--amber); }
   .neutral { background: var(--gray-100); color: var(--gray-700); }
-  .loading {
+  .loading-inline {
     display: none;
     text-align: center;
     color: var(--gray-500);
-    font-size: 14px;
-    margin-top: 20px;
+    font-size: 13px;
+    margin-top: 12px;
   }
   .spinner {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border: 2px solid var(--gray-300);
     border-top-color: var(--gray-700);
     border-radius: 50%;
@@ -198,6 +208,11 @@
     color: var(--green);
     display: none;
   }
+  #finalerBereich {
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 2px solid var(--gray-300);
+  }
 </style>
 </head>
 <body>
@@ -208,7 +223,7 @@
 
   <!-- Login-Bereich -->
   <div id="loginBox">
-    <label for="loginEmail">Deine E-Mail</label>
+    <label class="first-in-block" for="loginEmail">Deine E-Mail</label>
     <input type="email" id="loginEmail" placeholder="name@kasse-stimmt.de">
 
     <label for="loginPasswort">Passwort</label>
@@ -226,16 +241,39 @@
     </div>
 
     <form id="leadForm">
-      <label for="name">Name</label>
-      <input type="text" id="name" name="name" required placeholder="Vor- und Nachname">
 
-      <label for="telefon">Telefon</label>
-      <input type="tel" id="telefon" name="telefon" placeholder="+49 ...">
+      <!-- Block: Leaddetails -->
+      <div class="block-heading">Leaddetails</div>
+
+      <label class="first-in-block" for="ticketNummer">Ticketnummer (falls bereits vorhanden)</label>
+      <input type="text" id="ticketNummer" name="ticketNummer" placeholder="z.B. tb12345">
+
+      <label for="vkcId">VKC-ID</label>
+      <input type="text" id="vkcId" name="vkcId" placeholder="z.B. VKC-11897">
+
+      <label for="vkcUrl">VKC-URL</label>
+      <input type="url" id="vkcUrl" name="vkcUrl" placeholder="Link zur Verkaufschance im Sales Navigator">
+
+      <!-- Block: Kontakt -->
+      <div class="block-heading">Kontakt</div>
+
+      <label class="first-in-block" for="name">Name</label>
+      <input type="text" id="name" name="name" required placeholder="Vor- und Nachname">
 
       <label for="email">E-Mail</label>
       <input type="email" id="email" name="email" placeholder="name@beispiel.de">
 
-      <label for="firma">Name des Unternehmens (Firma / Betriebsstätte)</label>
+      <label for="telefon">Telefon</label>
+      <input type="tel" id="telefon" name="telefon" placeholder="+49...">
+
+      <button type="button" id="pruefungKontaktBtn" class="secondary">Prüfung Kontakt</button>
+      <div class="loading-inline" id="loadingKontakt"><span class="spinner"></span>Wird geprüft …</div>
+      <div id="kontaktBlockErgebnis"></div>
+
+      <!-- Block: Firma/Betrieb -->
+      <div class="block-heading">Firma / Betrieb</div>
+
+      <label class="first-in-block" for="firma">Name Unternehmen</label>
       <input type="text" id="firma" name="firma" placeholder="Firmenname oder Gaststätte">
 
       <label for="betriebsart">Betriebsart</label>
@@ -250,8 +288,15 @@
       <label for="ort">Ort</label>
       <input type="text" id="ort" name="ort" placeholder="z.B. Berlin (Mitte)">
 
-      <label for="ticketNummer">Ticketnummer (falls bereits vorhanden)</label>
-      <input type="text" id="ticketNummer" name="ticketNummer" placeholder="z.B. tb12345">
+      <button type="button" id="pruefungFirmaBtn" class="secondary">Prüfung Firma/Betrieb</button>
+      <div class="loading-inline" id="loadingFirma"><span class="spinner"></span>Wird geprüft und recherchiert …</div>
+      <div id="firmaBlockErgebnis"></div>
+
+      <!-- Block: Info -->
+      <div class="block-heading">Info</div>
+
+      <label class="first-in-block" for="notizen">Notizen</label>
+      <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
 
       <label for="leadgrund">Leadgrund</label>
       <select id="leadgrund" name="leadgrund">
@@ -267,26 +312,16 @@
         <option value="Vertragsablauf">Vertragsablauf</option>
       </select>
 
-      <label for="vkcId">VKC-ID</label>
-      <input type="text" id="vkcId" name="vkcId" placeholder="z.B. VKC-11897">
-
-      <label for="vkcUrl">VKC-URL</label>
-      <input type="url" id="vkcUrl" name="vkcUrl" placeholder="Link zur Verkaufschance im Sales Navigator">
-
-      <label for="notizen">Notizen</label>
-      <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
-
-      <label for="solutionDueDate">Datum Lösung (voraussichtlich)</label>
+      <label for="solutionDueDate">Datum der Lösung (voraussichtlich)</label>
       <input type="date" id="solutionDueDate" name="solutionDueDate">
 
-      <button type="submit" id="submitBtn">Prüfen &amp; Recherche starten</button>
+      <!-- Finaler Bereich -->
+      <div id="finalerBereich">
+        <button type="button" id="ticketAnlegenBtn">Ticket aktualisieren/erzeugen</button>
+        <div id="ticketErgebnis" style="margin-top:12px;"></div>
+      </div>
+
     </form>
-
-    <div class="loading" id="loading">
-      <span class="spinner"></span>Wird gegen weclapp geprüft und recherchiert …
-    </div>
-
-    <div id="result"></div>
   </div>
 </div>
 
@@ -299,11 +334,6 @@
   const topBar = document.getElementById("topBar");
   const loginError = document.getElementById("loginError");
   const userEmailDisplay = document.getElementById("userEmailDisplay");
-
-  const form = document.getElementById("leadForm");
-  const submitBtn = document.getElementById("submitBtn");
-  const loading = document.getElementById("loading");
-  const resultDiv = document.getElementById("result");
 
   function getZugang() {
     const raw = sessionStorage.getItem(STORAGE_KEY);
@@ -331,7 +361,6 @@
     topBar.style.display = "none";
   }
 
-  // Beim Laden prüfen, ob schon eine Sitzung besteht
   const bestehenderZugang = getZugang();
   if (bestehenderZugang) {
     zeigeApp(bestehenderZugang.email);
@@ -349,8 +378,6 @@
       return;
     }
 
-    // Zugangsdaten merken; die eigentliche Prüfung erfolgt serverseitig
-    // beim ersten tatsächlichen Absenden des Lead-Formulars.
     loginError.style.display = "none";
     setZugang(email, passwort);
     zeigeApp(email);
@@ -363,26 +390,23 @@
     zeigeLogin();
   });
 
+  // Telefonnummer waehrend der Eingabe automatisch bereinigen: nur '+' und Ziffern erlaubt
+  const telefonInput = document.getElementById("telefon");
+  telefonInput.addEventListener("input", () => {
+    let wert = telefonInput.value;
+    let bereinigt = wert.replace(/[^\d+]/g, "");
+    bereinigt = bereinigt.replace(/(?!^)\+/g, "");
+    telefonInput.value = bereinigt;
+  });
+
   const confidenceLabel = (c) => {
     if (c === "hoch") return "sehr sicher";
     if (c === "mittel") return "möglich";
     return "unsicher";
   };
 
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const zugang = getZugang();
-    if (!zugang) {
-      zeigeLogin();
-      return;
-    }
-
-    submitBtn.disabled = true;
-    loading.style.display = "block";
-    resultDiv.style.display = "none";
-    resultDiv.innerHTML = "";
-
-    const payload = {
+  function sammleFormularDaten() {
+    return {
       name: document.getElementById("name").value.trim(),
       telefon: document.getElementById("telefon").value.trim(),
       email: document.getElementById("email").value.trim(),
@@ -395,51 +419,71 @@
       vkcUrl: document.getElementById("vkcUrl").value.trim(),
       notizen: document.getElementById("notizen").value.trim(),
       leadgrund: document.getElementById("leadgrund").value,
-      ticketNummer: document.getElementById("ticketNummer").value.trim(),
-      erfasserEmail: zugang.email,
-      passwort: zugang.passwort
+      ticketNummer: document.getElementById("ticketNummer").value.trim()
     };
+  }
+
+  async function rufePruefungAuf() {
+    const zugang = getZugang();
+    if (!zugang) {
+      zeigeLogin();
+      throw new Error("Nicht angemeldet");
+    }
+
+    const payload = { ...sammleFormularDaten(), erfasserEmail: zugang.email, passwort: zugang.passwort };
+
+    const response = await fetch(FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 401) {
+      clearZugang();
+      loginError.textContent = "Anmeldung ungültig. Bitte erneut anmelden.";
+      loginError.style.display = "block";
+      zeigeLogin();
+      throw new Error("Nicht autorisiert");
+    }
+
+    if (!response.ok) {
+      let details = "";
+      try {
+        const errBody = await response.json();
+        details = errBody.error || "";
+      } catch {}
+      throw new Error(`Serverfehler ${response.status}${details ? ": " + details : ""}`);
+    }
+
+    return response.json();
+  }
+
+  let letztesKontaktErgebnis = null;
+  let letztesFirmaErgebnis = null;
+
+  // ---------- Pruefung Kontakt ----------
+  document.getElementById("pruefungKontaktBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("pruefungKontaktBtn");
+    const loading = document.getElementById("loadingKontakt");
+    const zielDiv = document.getElementById("kontaktBlockErgebnis");
+
+    btn.disabled = true;
+    loading.style.display = "block";
+    zielDiv.innerHTML = "";
 
     try {
-      const response = await fetch(FUNCTION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.status === 401) {
-        // Zugangsdaten falsch -> Sitzung verwerfen, zurück zum Login
-        clearZugang();
-        loginError.textContent = "Anmeldung ungültig. Bitte erneut anmelden.";
-        loginError.style.display = "block";
-        zeigeLogin();
-        return;
-      }
-
-      if (!response.ok) {
-        let details = "";
-        try {
-          const errBody = await response.json();
-          details = errBody.error || "";
-        } catch {}
-        throw new Error(`Serverfehler ${response.status}${details ? ": " + details : ""}`);
-      }
-
-      const data = await response.json();
-      renderResult(data);
+      const data = await rufePruefungAuf();
+      letztesKontaktErgebnis = data;
+      renderKontaktErgebnis(data, zielDiv);
     } catch (err) {
-      resultDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>Die Prüfung konnte nicht durchgeführt werden. (${err.message})</div>`;
-      resultDiv.style.display = "block";
+      zielDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>${err.message}</div>`;
     } finally {
       loading.style.display = "none";
-      submitBtn.disabled = false;
+      btn.disabled = false;
     }
   });
 
-  let letztesErgebnis = null;
-
-  function renderResult(data) {
-    letztesErgebnis = data;
+  function renderKontaktErgebnis(data, zielDiv) {
     let html = "";
 
     if (data.status === "kein Treffer") {
@@ -467,43 +511,7 @@
       </div>`;
     }
 
-    if (data.firma) {
-      if (data.firma.status === "kein Treffer") {
-        html += `<div class="block neutral"><div class="block-title">🏢 Firma</div>Keine bestehende Firma gefunden — wird neu angelegt.</div>`;
-      } else {
-        let firmaOptionenHtml = "";
-        data.firma.treffer.forEach((f, i) => {
-          firmaOptionenHtml += `
-            <div class="kandidat-option">
-              <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
-              <label for="firma_${i}">${f.company || f.company2 || ""}</label>
-            </div>`;
-        });
-        firmaOptionenHtml += `
-          <div class="kandidat-option">
-            <input type="radio" name="firmaAuswahl" id="firma_neu" value="neu" checked>
-            <label for="firma_neu">Keine übernehmen — neue Firma mit den eingegebenen Daten anlegen</label>
-          </div>`;
-
-        html += `<div class="block warn">
-          <div class="block-title">⚠️ Firma möglicherweise vorhanden (${data.firma.anzahl})</div>
-          ${firmaOptionenHtml}
-          <button type="button" class="confirm-btn" id="firmaBestaetigenBtn">Auswahl bestätigen</button>
-          <div class="auswahl-bestaetigt" id="firmaAuswahlBestaetigt"></div>
-        </div>`;
-      }
-    }
-
-    if (data.perplexity) {
-      html += `<div class="block ok"><div class="block-title">🔍 Recherche-Ergebnis (Perplexity)</div>${data.perplexity}<br><em style="opacity:0.8;">Unbestätigte Recherche — bitte im Gespräch verifizieren.</em></div>`;
-    }
-
-    html += `
-      <button type="button" id="ticketAnlegenBtn" style="margin-top:16px;">Ticket jetzt anlegen</button>
-      <div id="ticketErgebnis" style="margin-top:12px; display:none;"></div>`;
-
-    resultDiv.innerHTML = html;
-    resultDiv.style.display = "block";
+    zielDiv.innerHTML = html;
 
     const bestaetigenBtn = document.getElementById("kontaktBestaetigenBtn");
     if (bestaetigenBtn) {
@@ -523,9 +531,66 @@
         anzeige.style.display = "block";
       });
     } else {
-      // Kein Treffer -> automatisch "neu" setzen, keine Auswahl noetig
       window.ausgewaehlterKontakt = { modus: "neu" };
     }
+  }
+
+  // ---------- Pruefung Firma/Betrieb ----------
+  document.getElementById("pruefungFirmaBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("pruefungFirmaBtn");
+    const loading = document.getElementById("loadingFirma");
+    const zielDiv = document.getElementById("firmaBlockErgebnis");
+
+    btn.disabled = true;
+    loading.style.display = "block";
+    zielDiv.innerHTML = "";
+
+    try {
+      const data = await rufePruefungAuf();
+      letztesFirmaErgebnis = data;
+      renderFirmaErgebnis(data, zielDiv);
+    } catch (err) {
+      zielDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>${err.message}</div>`;
+    } finally {
+      loading.style.display = "none";
+      btn.disabled = false;
+    }
+  });
+
+  function renderFirmaErgebnis(data, zielDiv) {
+    let html = "";
+
+    if (!data.firma || data.firma.status === "kein Treffer") {
+      html += `<div class="block neutral"><div class="block-title">🏢 Firma</div>Keine bestehende Firma gefunden — wird neu angelegt.</div>`;
+      window.ausgewaehlteFirma = { modus: "neu" };
+    } else {
+      let firmaOptionenHtml = "";
+      data.firma.treffer.forEach((f, i) => {
+        firmaOptionenHtml += `
+          <div class="kandidat-option">
+            <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
+            <label for="firma_${i}">${f.company || f.company2 || ""}</label>
+          </div>`;
+      });
+      firmaOptionenHtml += `
+        <div class="kandidat-option">
+          <input type="radio" name="firmaAuswahl" id="firma_neu" value="neu" checked>
+          <label for="firma_neu">Keine übernehmen — neue Firma mit den eingegebenen Daten anlegen</label>
+        </div>`;
+
+      html += `<div class="block warn">
+        <div class="block-title">⚠️ Firma möglicherweise vorhanden (${data.firma.anzahl})</div>
+        ${firmaOptionenHtml}
+        <button type="button" class="confirm-btn" id="firmaBestaetigenBtn">Auswahl bestätigen</button>
+        <div class="auswahl-bestaetigt" id="firmaAuswahlBestaetigt"></div>
+      </div>`;
+    }
+
+    if (data.perplexity) {
+      html += `<div class="block ok"><div class="block-title">🔍 Recherche-Ergebnis (Perplexity)</div>${data.perplexity}<br><em style="opacity:0.8;">Unbestätigte Recherche — bitte im Gespräch verifizieren.</em></div>`;
+    }
+
+    zielDiv.innerHTML = html;
 
     const firmaBestaetigenBtn = document.getElementById("firmaBestaetigenBtn");
     if (firmaBestaetigenBtn) {
@@ -544,70 +609,56 @@
         }
         anzeige.style.display = "block";
       });
-    } else {
-      window.ausgewaehlteFirma = { modus: "neu" };
+    }
+  }
+
+  // ---------- Ticket erzeugen/aktualisieren ----------
+  document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
+    const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
+    const zugang = getZugang();
+    if (!zugang) {
+      zeigeLogin();
+      return;
     }
 
-    document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
-      const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
-      const zugang = getZugang();
-      if (!zugang) {
-        zeigeLogin();
-        return;
+    const kontaktWahl = window.ausgewaehlterKontakt || { modus: "neu" };
+    const firmaWahl = window.ausgewaehlteFirma || { modus: "neu" };
+
+    const payload = {
+      action: "create",
+      ...sammleFormularDaten(),
+      solutionDueDate: document.getElementById("solutionDueDate").value,
+      kontakt: { modus: kontaktWahl.modus, partyId: kontaktWahl.partyId },
+      firma_auswahl: { modus: firmaWahl.modus, partyId: firmaWahl.partyId },
+      erfasserEmail: zugang.email,
+      passwort: zugang.passwort
+    };
+
+    ticketErgebnisDiv.innerHTML = `<div class="block neutral">Ticket wird angelegt …</div>`;
+
+    try {
+      const response = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Serverfehler ${response.status}`);
       }
 
-      const kontaktWahl = window.ausgewaehlterKontakt || { modus: "neu" };
-      const firmaWahl = window.ausgewaehlteFirma || { modus: "neu" };
-
-      const payload = {
-        action: "create",
-        name: data.eingabe.name,
-        telefon: data.eingabe.telefon,
-        email: data.eingabe.email,
-        firma: data.eingabe.firma,
-        betriebsart: data.eingabe.betriebsart,
-        strasse: data.eingabe.strasse,
-        plz: data.eingabe.plz,
-        ort: data.eingabe.ort,
-        vkcId: data.eingabe.vkcId,
-        vkcUrl: data.eingabe.vkcUrl,
-        notizen: data.eingabe.notizen,
-        leadgrund: data.eingabe.leadgrund,
-        ticketNummer: data.eingabe.ticketNummer,
-        solutionDueDate: document.getElementById("solutionDueDate").value,
-        kontakt: { modus: kontaktWahl.modus, partyId: kontaktWahl.partyId },
-        firma_auswahl: { modus: firmaWahl.modus, partyId: firmaWahl.partyId },
-        erfasserEmail: zugang.email,
-        passwort: zugang.passwort
-      };
-
-      ticketErgebnisDiv.style.display = "block";
-      ticketErgebnisDiv.innerHTML = `<div class="block neutral">Ticket wird angelegt …</div>`;
-
-      try {
-        const response = await fetch(FUNCTION_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody.error || `Serverfehler ${response.status}`);
-        }
-
-        const ergebnis = await response.json();
-        const aktionText = ergebnis.aktion === "aktualisiert"
-          ? "Bestehendes Ticket wurde aktualisiert"
-          : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
-          ? "Ticketnummer nicht gefunden — neues Ticket wurde stattdessen angelegt"
-          : "Neues Ticket wurde angelegt";
-        ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticket-ID: ${ergebnis.ticketId}<br>Betreff: ${ergebnis.ticketSubject}</div>`;
-      } catch (err) {
-        ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
-      }
-    });
-  }
+      const ergebnis = await response.json();
+      const aktionText = ergebnis.aktion === "aktualisiert"
+        ? "Bestehendes Ticket wurde aktualisiert"
+        : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
+        ? "Ticketnummer nicht gefunden — neues Ticket wurde stattdessen angelegt"
+        : "Neues Ticket wurde angelegt";
+      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticket-ID: ${ergebnis.ticketId}<br>Betreff: ${ergebnis.ticketSubject}</div>`;
+    } catch (err) {
+      ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
+    }
+  });
 </script>
 
 </body>
