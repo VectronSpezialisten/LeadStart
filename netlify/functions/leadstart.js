@@ -518,6 +518,29 @@ async function sucheNachName(nameNormalized) {
   return ergebnisse.flat();
 }
 
+// Zerlegt den eingegebenen Firmennamen in einzelne Woerter und sucht jedes davon
+// per Teilstring-Suche (-like) sowohl gegen company als auch gegen company2.
+// Notwendig aus zwei Gruenden: 1) eine komplette Phrase als ein Teilstring zu
+// verlangen scheitert schon an kleinen Abweichungen (z.B. "Karsten" statt
+// "Karstens"); wortweise Suche findet trotzdem Teiltreffer. 2) -like ist
+// case-sensitiv, daher auch hier Titelcase-Normalisierung je Wort.
+// Achtung: bei Firmennamen mit bewusst unregelmaessiger Schreibweise (z.B.
+// "KaDeWe") kann die Titelcase-Normalisierung selbst zu keinem Treffer fuehren -
+// dieser Kompromiss wird in Kauf genommen, da er in der Praxis deutlich mehr
+// Treffer liefert, als er verhindert.
+async function sucheNachFirma(companyNormalized) {
+  const tokens = companyNormalized.split(/\s+/).filter(Boolean).map(titelCase);
+  if (tokens.length === 0) return [];
+
+  const promises = [];
+  for (const token of tokens) {
+    promises.push(weclappGet({ "company-like": `%${token}%` }));
+    promises.push(weclappGet({ "company2-like": `%${token}%` }));
+  }
+  const ergebnisse = await Promise.all(promises);
+  return ergebnisse.flat();
+}
+
 // ---------- Handler ----------
 
 exports.handler = async (event) => {
@@ -686,7 +709,6 @@ exports.handler = async (event) => {
       fixPhone2Results,
       nameResults,
       companyResults,
-      company2Results,
       addressResults
     ] = await Promise.all([
       emailNormalized ? weclappGet({ "email-like": `%${emailNormalized}%` }) : [],
@@ -695,8 +717,7 @@ exports.handler = async (event) => {
       phoneNormalized ? weclappGet({ "phone-like": `%${phoneNormalized}%` }) : [],
       phoneNormalized ? weclappGet({ "fixPhone2-like": `%${phoneNormalized}%` }) : [],
       nameNormalized ? sucheNachName(nameNormalized) : [],
-      companyNormalized ? weclappGet({ "company-like": `%${companyNormalized}%` }) : [],
-      companyNormalized ? weclappGet({ "company2-like": `%${companyNormalized}%` }) : [],
+      companyNormalized ? sucheNachFirma(companyNormalized) : [],
       (!companyNormalized && strasse) ? weclappGet({ "addresses.street1-like": `%${strasse}%` }) : []
     ]);
 
@@ -711,7 +732,6 @@ exports.handler = async (event) => {
 
     const firmaErgebnis = auswertenFirma({
       company: companyResults,
-      company2: company2Results,
       adresse: addressResults
     });
 
