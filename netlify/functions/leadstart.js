@@ -142,7 +142,13 @@ async function weclappSearchMobilePhone1(targetPhone) {
 
 // ---------- Dubletten-Auswertung ----------
 
-function auswertenKontakt(sources) {
+const TELEFON_FELDER = ["mobilePhone1", "mobilePhone2", "phone", "fixPhone2"];
+
+// benoetigteKategorien = welche der drei Kontakt-Kategorien (name, email, telefon)
+// tatsaechlich ausgefuellt wurden. Ein Treffer wird nur angezeigt, wenn ER ALLE
+// davon tatsaechlich erfuellt (strikte Und-Verknuepfung). "telefon" gilt als erfuellt,
+// sobald irgendeines der vier internen Telefonfelder getroffen hat.
+function auswertenKontakt(sources, benoetigteKategorien = []) {
   const partyMap = new Map();
 
   for (const [quelle, results] of Object.entries(sources)) {
@@ -154,11 +160,9 @@ function auswertenKontakt(sources) {
     }
   }
 
-  const treffer = Array.from(partyMap.values()).map(({ party, matchedFields }) => {
+  let treffer = Array.from(partyMap.values()).map(({ party, matchedFields }) => {
     const hasEmail = matchedFields.includes("email");
-    const hasPhone = matchedFields.some((f) =>
-      ["mobilePhone1", "mobilePhone2", "phone", "fixPhone2"].includes(f)
-    );
+    const hasPhone = matchedFields.some((f) => TELEFON_FELDER.includes(f));
 
     let confidence;
     if (hasPhone) confidence = "hoch";
@@ -179,6 +183,14 @@ function auswertenKontakt(sources) {
     };
   });
 
+  // Strikt: jede ausgefuellte Kategorie muss beim Treffer tatsaechlich erfuellt sein.
+  treffer = treffer.filter((t) =>
+    benoetigteKategorien.every((kategorie) => {
+      if (kategorie === "telefon") return t.matchedFields.some((f) => TELEFON_FELDER.includes(f));
+      return t.matchedFields.includes(kategorie);
+    })
+  );
+
   // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
   treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
 
@@ -190,7 +202,11 @@ function auswertenKontakt(sources) {
   return { status, anzahl: treffer.length, treffer };
 }
 
-function auswertenFirma(sources) {
+// benoetigteFelder = welche der vier Firmen-Suchfelder (name, strasse, plz, ort)
+// tatsaechlich ausgefuellt wurden. Ein Treffer wird nur angezeigt, wenn ER ALLE
+// davon tatsaechlich erfuellt (strikte Und-Verknuepfung). Der Nutzer steuert die
+// Trefferzahl damit selbst: mehr Felder ausfuellen = enger, Felder entfernen = weiter.
+function auswertenFirma(sources, benoetigteFelder = []) {
   const firmaMap = new Map();
 
   for (const [quelle, results] of Object.entries(sources)) {
@@ -202,7 +218,7 @@ function auswertenFirma(sources) {
     }
   }
 
-  const treffer = Array.from(firmaMap.values()).map(({ party, matchedFields }) => {
+  let treffer = Array.from(firmaMap.values()).map(({ party, matchedFields }) => {
     const adressen = party.addresses || [];
     const adresse = adressen.find((a) => a.primaryAddress) || adressen[0] || {};
     return {
@@ -217,6 +233,9 @@ function auswertenFirma(sources) {
       confidence: firmaKonfidenz(matchedFields)
     };
   });
+
+  // Strikt: jedes ausgefuellte Feld muss beim Treffer tatsaechlich vorhanden sein.
+  treffer = treffer.filter((t) => benoetigteFelder.every((feld) => t.matchedFields.includes(feld)));
 
   // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
   treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
@@ -754,21 +773,38 @@ exports.handler = async (event) => {
       ort ? sucheNachOrt(ort) : []
     ]);
 
-    const kontaktErgebnis = auswertenKontakt({
-      email: emailResults,
-      mobilePhone1: mobilePhone1Results,
-      mobilePhone2: mobilePhone2Results,
-      phone: phoneResults,
-      fixPhone2: fixPhone2Results,
-      name: nameResults
-    });
+    const benoetigteKontaktKategorien = [];
+    if (nameNormalized) benoetigteKontaktKategorien.push("name");
+    if (emailNormalized) benoetigteKontaktKategorien.push("email");
+    if (phoneNormalized) benoetigteKontaktKategorien.push("telefon");
 
-    const firmaErgebnis = auswertenFirma({
-      name: companyResults,
-      strasse: strasseResults,
-      plz: plzResults,
-      ort: ortResults
-    });
+    const kontaktErgebnis = auswertenKontakt(
+      {
+        email: emailResults,
+        mobilePhone1: mobilePhone1Results,
+        mobilePhone2: mobilePhone2Results,
+        phone: phoneResults,
+        fixPhone2: fixPhone2Results,
+        name: nameResults
+      },
+      benoetigteKontaktKategorien
+    );
+
+    const benoetigteFirmaFelder = [];
+    if (companyNormalized) benoetigteFirmaFelder.push("name");
+    if (strasse) benoetigteFirmaFelder.push("strasse");
+    if (plz) benoetigteFirmaFelder.push("plz");
+    if (ort) benoetigteFirmaFelder.push("ort");
+
+    const firmaErgebnis = auswertenFirma(
+      {
+        name: companyResults,
+        strasse: strasseResults,
+        plz: plzResults,
+        ort: ortResults
+      },
+      benoetigteFirmaFelder
+    );
 
     const perplexityText = await perplexityRecherche(nameRaw, companyRaw);
 
