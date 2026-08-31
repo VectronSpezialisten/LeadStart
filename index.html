@@ -73,9 +73,18 @@
     font-family: inherit;
     resize: vertical;
   }
-  input:focus, textarea:focus {
+  input:focus, textarea:focus, select:focus {
     outline: none;
     border-color: var(--gray-700);
+  }
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--gray-300);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    background: var(--white);
   }
   button {
     width: 100%;
@@ -241,6 +250,23 @@
       <label for="ort">Ort</label>
       <input type="text" id="ort" name="ort" placeholder="z.B. Berlin (Mitte)">
 
+      <label for="ticketNummer">Ticketnummer (falls bereits vorhanden)</label>
+      <input type="text" id="ticketNummer" name="ticketNummer" placeholder="z.B. tb12345">
+
+      <label for="leadgrund">Leadgrund</label>
+      <select id="leadgrund" name="leadgrund">
+        <option value="">Bitte wählen …</option>
+        <option value="Betreuungswechsel">Betreuungswechsel</option>
+        <option value="Funktionsupgrade">Funktionsupgrade</option>
+        <option value="Kosten & Preise">Kosten & Preise</option>
+        <option value="Neueröffnung">Neueröffnung</option>
+        <option value="Prozessanforderung">Prozessanforderung</option>
+        <option value="Störung">Störung</option>
+        <option value="Systemwechsel">Systemwechsel</option>
+        <option value="TSE-Ablauf">TSE-Ablauf</option>
+        <option value="Vertragsablauf">Vertragsablauf</option>
+      </select>
+
       <label for="vkcId">VKC-ID</label>
       <input type="text" id="vkcId" name="vkcId" placeholder="z.B. VKC-11897">
 
@@ -368,6 +394,8 @@
       vkcId: document.getElementById("vkcId").value.trim(),
       vkcUrl: document.getElementById("vkcUrl").value.trim(),
       notizen: document.getElementById("notizen").value.trim(),
+      leadgrund: document.getElementById("leadgrund").value,
+      ticketNummer: document.getElementById("ticketNummer").value.trim(),
       erfasserEmail: zugang.email,
       passwort: zugang.passwort
     };
@@ -422,158 +450,4 @@
         optionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="kontaktAuswahl" id="kontakt_${i}" value="${t.id}">
-            <label for="kontakt_${i}">${t.firstName || ""} ${t.lastName || ""} <em>(Sicherheit: ${confidenceLabel(t.confidence)})</em></label>
-          </div>`;
-      });
-      optionenHtml += `
-        <div class="kandidat-option">
-          <input type="radio" name="kontaktAuswahl" id="kontakt_neu" value="neu" checked>
-          <label for="kontakt_neu">Keinen übernehmen — neuen Kontakt mit den eingegebenen Daten anlegen</label>
-        </div>`;
-
-      html += `<div class="block warn">
-        <div class="block-title">⚠️ Kontakt möglicherweise vorhanden (${data.anzahl})</div>
-        ${optionenHtml}
-        <button type="button" class="confirm-btn" id="kontaktBestaetigenBtn">Auswahl bestätigen</button>
-        <div class="auswahl-bestaetigt" id="kontaktAuswahlBestaetigt"></div>
-      </div>`;
-    }
-
-    if (data.firma) {
-      if (data.firma.status === "kein Treffer") {
-        html += `<div class="block neutral"><div class="block-title">🏢 Firma</div>Keine bestehende Firma gefunden — wird neu angelegt.</div>`;
-      } else {
-        let firmaOptionenHtml = "";
-        data.firma.treffer.forEach((f, i) => {
-          firmaOptionenHtml += `
-            <div class="kandidat-option">
-              <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
-              <label for="firma_${i}">${f.company || f.company2 || ""}</label>
-            </div>`;
-        });
-        firmaOptionenHtml += `
-          <div class="kandidat-option">
-            <input type="radio" name="firmaAuswahl" id="firma_neu" value="neu" checked>
-            <label for="firma_neu">Keine übernehmen — neue Firma mit den eingegebenen Daten anlegen</label>
-          </div>`;
-
-        html += `<div class="block warn">
-          <div class="block-title">⚠️ Firma möglicherweise vorhanden (${data.firma.anzahl})</div>
-          ${firmaOptionenHtml}
-          <button type="button" class="confirm-btn" id="firmaBestaetigenBtn">Auswahl bestätigen</button>
-          <div class="auswahl-bestaetigt" id="firmaAuswahlBestaetigt"></div>
-        </div>`;
-      }
-    }
-
-    if (data.perplexity) {
-      html += `<div class="block ok"><div class="block-title">🔍 Recherche-Ergebnis (Perplexity)</div>${data.perplexity}<br><em style="opacity:0.8;">Unbestätigte Recherche — bitte im Gespräch verifizieren.</em></div>`;
-    }
-
-    html += `
-      <button type="button" id="ticketAnlegenBtn" style="margin-top:16px;">Ticket jetzt anlegen</button>
-      <div id="ticketErgebnis" style="margin-top:12px; display:none;"></div>`;
-
-    resultDiv.innerHTML = html;
-    resultDiv.style.display = "block";
-
-    const bestaetigenBtn = document.getElementById("kontaktBestaetigenBtn");
-    if (bestaetigenBtn) {
-      bestaetigenBtn.addEventListener("click", () => {
-        const gewaehlt = document.querySelector('input[name="kontaktAuswahl"]:checked');
-        const anzeige = document.getElementById("kontaktAuswahlBestaetigt");
-        if (!gewaehlt) return;
-
-        if (gewaehlt.value === "neu") {
-          window.ausgewaehlterKontakt = { modus: "neu" };
-          anzeige.textContent = "✓ Bestätigt: neuer Kontakt wird angelegt.";
-        } else {
-          const kandidat = data.treffer.find((t) => t.id === gewaehlt.value);
-          window.ausgewaehlterKontakt = { modus: "vorhanden", partyId: gewaehlt.value, kandidat };
-          anzeige.textContent = `✓ Bestätigt: bestehender Kontakt "${kandidat.firstName || ""} ${kandidat.lastName || ""}" wird übernommen.`;
-        }
-        anzeige.style.display = "block";
-      });
-    } else {
-      // Kein Treffer -> automatisch "neu" setzen, keine Auswahl noetig
-      window.ausgewaehlterKontakt = { modus: "neu" };
-    }
-
-    const firmaBestaetigenBtn = document.getElementById("firmaBestaetigenBtn");
-    if (firmaBestaetigenBtn) {
-      firmaBestaetigenBtn.addEventListener("click", () => {
-        const gewaehlt = document.querySelector('input[name="firmaAuswahl"]:checked');
-        const anzeige = document.getElementById("firmaAuswahlBestaetigt");
-        if (!gewaehlt) return;
-
-        if (gewaehlt.value === "neu") {
-          window.ausgewaehlteFirma = { modus: "neu" };
-          anzeige.textContent = "✓ Bestätigt: neue Firma wird angelegt.";
-        } else {
-          const kandidat = data.firma.treffer.find((f) => f.id === gewaehlt.value);
-          window.ausgewaehlteFirma = { modus: "vorhanden", partyId: gewaehlt.value, kandidat };
-          anzeige.textContent = `✓ Bestätigt: bestehende Firma "${kandidat.company || kandidat.company2 || ""}" wird übernommen.`;
-        }
-        anzeige.style.display = "block";
-      });
-    } else {
-      window.ausgewaehlteFirma = { modus: "neu" };
-    }
-
-    document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
-      const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
-      const zugang = getZugang();
-      if (!zugang) {
-        zeigeLogin();
-        return;
-      }
-
-      const kontaktWahl = window.ausgewaehlterKontakt || { modus: "neu" };
-      const firmaWahl = window.ausgewaehlteFirma || { modus: "neu" };
-
-      const payload = {
-        action: "create",
-        name: data.eingabe.name,
-        telefon: data.eingabe.telefon,
-        email: data.eingabe.email,
-        firma: data.eingabe.firma,
-        betriebsart: data.eingabe.betriebsart,
-        strasse: data.eingabe.strasse,
-        plz: data.eingabe.plz,
-        ort: data.eingabe.ort,
-        vkcId: data.eingabe.vkcId,
-        vkcUrl: data.eingabe.vkcUrl,
-        notizen: data.eingabe.notizen,
-        solutionDueDate: document.getElementById("solutionDueDate").value,
-        kontakt: { modus: kontaktWahl.modus, partyId: kontaktWahl.partyId },
-        firma_auswahl: { modus: firmaWahl.modus, partyId: firmaWahl.partyId },
-        erfasserEmail: zugang.email,
-        passwort: zugang.passwort
-      };
-
-      ticketErgebnisDiv.style.display = "block";
-      ticketErgebnisDiv.innerHTML = `<div class="block neutral">Ticket wird angelegt …</div>`;
-
-      try {
-        const response = await fetch(FUNCTION_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody.error || `Serverfehler ${response.status}`);
-        }
-
-        const ergebnis = await response.json();
-        ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Ticket angelegt</div>Ticket-ID: ${ergebnis.ticketId}<br>Betreff: ${ergebnis.ticketSubject}</div>`;
-      } catch (err) {
-        ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
-      }
-    });
-  }
-</script>
-
-</body>
-</html>
+            <label for="kontakt_${i}">${t.firstName || ""} ${t.lastName || ""} <em>(Sicherheit: ${confidenceLabel(t.confidence)})</em></labe
