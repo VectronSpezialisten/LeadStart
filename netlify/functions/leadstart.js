@@ -312,7 +312,10 @@ Gib eine kurze, prägnante Einschätzung (max. 4 Sätze) inkl. Rolle der genannt
 function standardPartyFelder() {
   return {
     commissionBlock: false,
-    competitor: false,
+    // "competitor" bewusst weggelassen: der verwendete API-Token hat dafuer
+    // keine Berechtigung (weclapp antwortet mit 403 "missing permissions for
+    // competitor"), obwohl das Feld laut Spezifikation als Pflichtfeld gilt.
+    // Ohne das Feld setzt weclapp offenbar einen internen Standardwert.
     customerActive: true,
     customerAllowDropshippingOrderCreation: true,
     customerBlocked: false,
