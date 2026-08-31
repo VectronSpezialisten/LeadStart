@@ -210,7 +210,8 @@ function auswertenFirma(sources) {
       plz: adresse.zipcode || "",
       ort: adresse.city || "",
       parentPartyId: party.parentPartyId || null,
-      matchedFields
+      matchedFields,
+      confidence: firmaKonfidenz(matchedFields)
     };
   });
 
@@ -501,44 +502,56 @@ function titelCase(wort) {
   return wort.charAt(0).toUpperCase() + wort.slice(1).toLowerCase();
 }
 
-// Zerlegt den vollstaendig eingegebenen Namen in einzelne Woerter und sucht
-// jedes davon per Teilstring-Suche (-like) sowohl gegen firstName als auch
-// gegen lastName. Notwendig, weil weclapp intern getrennte Vor-/Nachname-Felder
-// fuehrt, waehrend wir bewusst nur ein zusammenhaengendes Namensfeld erfassen.
-async function sucheNachName(nameNormalized) {
-  const tokens = nameNormalized.split(/\s+/).filter(Boolean).map(titelCase);
+// Verallgemeinerte Teilstring-Suche: zerlegt den Text in einzelne Woerter,
+// bringt jedes in die uebliche Schreibweise (Titelcase, da -like case-sensitiv
+// ist) und sucht jedes Wort per -like gegen alle angegebenen Felder. Findet so
+// auch bei kleinen Abweichungen (z.B. "Karsten" statt "Karstens") noch Treffer,
+// da nicht die komplette Phrase als ein zusammenhaengender Teilstring verlangt wird.
+async function sucheTeilstringMehrereFelder(text, felder) {
+  const tokens = (text || "").split(/\s+/).filter(Boolean).map(titelCase);
   if (tokens.length === 0) return [];
 
   const promises = [];
   for (const token of tokens) {
-    promises.push(weclappGet({ "firstName-like": `%${token}%` }));
-    promises.push(weclappGet({ "lastName-like": `%${token}%` }));
+    for (const feld of felder) {
+      promises.push(weclappGet({ [`${feld}-like`]: `%${token}%` }));
+    }
   }
   const ergebnisse = await Promise.all(promises);
   return ergebnisse.flat();
 }
 
-// Zerlegt den eingegebenen Firmennamen in einzelne Woerter und sucht jedes davon
-// per Teilstring-Suche (-like) sowohl gegen company als auch gegen company2.
-// Notwendig aus zwei Gruenden: 1) eine komplette Phrase als ein Teilstring zu
-// verlangen scheitert schon an kleinen Abweichungen (z.B. "Karsten" statt
-// "Karstens"); wortweise Suche findet trotzdem Teiltreffer. 2) -like ist
-// case-sensitiv, daher auch hier Titelcase-Normalisierung je Wort.
-// Achtung: bei Firmennamen mit bewusst unregelmaessiger Schreibweise (z.B.
-// "KaDeWe") kann die Titelcase-Normalisierung selbst zu keinem Treffer fuehren -
-// dieser Kompromiss wird in Kauf genommen, da er in der Praxis deutlich mehr
-// Treffer liefert, als er verhindert.
-async function sucheNachFirma(companyNormalized) {
-  const tokens = companyNormalized.split(/\s+/).filter(Boolean).map(titelCase);
-  if (tokens.length === 0) return [];
+async function sucheNachName(nameNormalized) {
+  return sucheTeilstringMehrereFelder(nameNormalized, ["firstName", "lastName"]);
+}
 
-  const promises = [];
-  for (const token of tokens) {
-    promises.push(weclappGet({ "company-like": `%${token}%` }));
-    promises.push(weclappGet({ "company2-like": `%${token}%` }));
-  }
-  const ergebnisse = await Promise.all(promises);
-  return ergebnisse.flat();
+async function sucheNachFirma(companyNormalized) {
+  return sucheTeilstringMehrereFelder(companyNormalized, ["company", "company2"]);
+}
+
+async function sucheNachOrt(ortNormalized) {
+  return sucheTeilstringMehrereFelder(ortNormalized, ["addresses.city"]);
+}
+
+async function sucheNachStrasse(strasseNormalized) {
+  return sucheTeilstringMehrereFelder(strasseNormalized, ["addresses.street1"]);
+}
+
+// PLZ wird exakt gesucht (keine Teilstring-Suche noetig, meist vollstaendig bekannt).
+async function sucheNachPlz(plz) {
+  if (!plz) return [];
+  return weclappGet({ "addresses.zipcode-eq": plz });
+}
+
+// Konfidenz fuer Firmen-Treffer nach fester Prioritaet (von sicher zu unsicher):
+// 1. Strasse + PLZ + Ort  -> hoch
+// 2. Strasse + Ort + Name -> mittel
+// 3. Ort + Name (oder alles Schwaechere, z.B. nur Name) -> niedrig
+function firmaKonfidenz(matchedFields) {
+  const hat = (f) => matchedFields.includes(f);
+  if (hat("strasse") && hat("plz") && hat("ort")) return "hoch";
+  if (hat("strasse") && hat("ort") && hat("name")) return "mittel";
+  return "niedrig";
 }
 
 // ---------- Handler ----------
@@ -709,7 +722,9 @@ exports.handler = async (event) => {
       fixPhone2Results,
       nameResults,
       companyResults,
-      addressResults
+      strasseResults,
+      plzResults,
+      ortResults
     ] = await Promise.all([
       emailNormalized ? weclappGet({ "email-like": `%${emailNormalized}%` }) : [],
       phoneNormalized ? weclappSearchMobilePhone1(phoneNormalized) : [],
@@ -718,7 +733,9 @@ exports.handler = async (event) => {
       phoneNormalized ? weclappGet({ "fixPhone2-like": `%${phoneNormalized}%` }) : [],
       nameNormalized ? sucheNachName(nameNormalized) : [],
       companyNormalized ? sucheNachFirma(companyNormalized) : [],
-      (!companyNormalized && strasse) ? weclappGet({ "addresses.street1-like": `%${strasse}%` }) : []
+      strasse ? sucheNachStrasse(strasse) : [],
+      plz ? sucheNachPlz(plz) : [],
+      ort ? sucheNachOrt(ort) : []
     ]);
 
     const kontaktErgebnis = auswertenKontakt({
@@ -731,8 +748,10 @@ exports.handler = async (event) => {
     });
 
     const firmaErgebnis = auswertenFirma({
-      company: companyResults,
-      adresse: addressResults
+      name: companyResults,
+      strasse: strasseResults,
+      plz: plzResults,
+      ort: ortResults
     });
 
     const perplexityText = await perplexityRecherche(nameRaw, companyRaw);
