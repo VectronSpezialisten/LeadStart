@@ -89,6 +89,11 @@ function normalizeCompanyName(name) {
 
 async function weclappGet(params) {
   const url = new URL(`${WECLAPP_BASE}/party`);
+  // Standardmaessig eine grosszuegige Seitengroesse setzen, damit unscharfe Suchen
+  // (z.B. "Grill") nicht durch weclapps kleine Standard-Seitengroesse abgeschnitten werden.
+  if (!("pageSize" in params)) {
+    url.searchParams.set("pageSize", "200");
+  }
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -160,11 +165,14 @@ function auswertenKontakt(sources) {
     else if (hasEmail) confidence = "mittel";
     else confidence = "niedrig";
 
+    const telefon = party.phone || party.mobilePhone1 || party.mobilePhone2 || party.fixPhone2 || "";
+
     return {
       id: party.id,
       firstName: party.firstName,
       lastName: party.lastName,
-      email: party.email,
+      email: party.email || "",
+      telefon,
       parentPartyId: party.parentPartyId || null,
       matchedFields,
       confidence
