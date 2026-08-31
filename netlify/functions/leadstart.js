@@ -87,24 +87,40 @@ function normalizeCompanyName(name) {
 
 // ---------- weclapp-Zugriff ----------
 
+// Blaettert vollstaendig durch alle Seiten, statt nur die erste (Standard-)Seite
+// zu lesen. Notwendig, weil haeufige Suchbegriffe (z.B. Ort "Berlin") leicht mehr
+// als eine Seite Treffer liefern koennen - ein einzelner Treffer wuerde sonst
+// je nach interner Sortierung von weclapp zufaellig ausserhalb der ersten Seite
+// liegen und faelschlich als "kein Treffer" erscheinen.
 async function weclappGet(params) {
-  const url = new URL(`${WECLAPP_BASE}/party`);
-  // Standardmaessig eine grosszuegige Seitengroesse setzen, damit unscharfe Suchen
-  // (z.B. "Grill") nicht durch weclapps kleine Standard-Seitengroesse abgeschnitten werden.
-  if (!("pageSize" in params)) {
-    url.searchParams.set("pageSize", "200");
+  const pageSize = 200;
+  let page = 1;
+  let alleErgebnisse = [];
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = new URL(`${WECLAPP_BASE}/party`);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+    url.searchParams.set("page", page);
+    url.searchParams.set("pageSize", pageSize);
+
+    const response = await fetch(url.toString(), {
+      headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
+    });
+    if (!response.ok) {
+      throw new Error(`weclapp-Fehler (${response.status}) bei ${url.toString()}`);
+    }
+    const data = await response.json();
+    const ergebnisse = data.result || [];
+    alleErgebnisse.push(...ergebnisse);
+
+    hasMore = ergebnisse.length === pageSize;
+    page++;
   }
-  for (const [key, value] of Object.entries(params)) {
-    url.searchParams.set(key, value);
-  }
-  const response = await fetch(url.toString(), {
-    headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
-  });
-  if (!response.ok) {
-    throw new Error(`weclapp-Fehler (${response.status}) bei ${url.toString()}`);
-  }
-  const data = await response.json();
-  return data.result || [];
+
+  return alleErgebnisse;
 }
 
 // mobilePhone1 ist bei weclapp strukturell nicht filterbar (x-weclapp.filterable: false,
