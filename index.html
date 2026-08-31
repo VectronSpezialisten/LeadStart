@@ -355,7 +355,14 @@
         return;
       }
 
-      if (!response.ok) throw new Error("Serverfehler: " + response.status);
+      if (!response.ok) {
+      let details = "";
+  try {
+    const errBody = await response.json();
+    details = errBody.error || "";
+  } catch {}
+  throw new Error(`Serverfehler ${response.status}${details ? ": " + details : ""}`);
+}
 
       const data = await response.json();
       renderResult(data);
