@@ -191,13 +191,20 @@ function auswertenFirma(sources) {
     }
   }
 
-  const treffer = Array.from(firmaMap.values()).map(({ party, matchedFields }) => ({
-    id: party.id,
-    company: party.company,
-    company2: party.company2,
-    parentPartyId: party.parentPartyId || null,
-    matchedFields
-  }));
+  const treffer = Array.from(firmaMap.values()).map(({ party, matchedFields }) => {
+    const adressen = party.addresses || [];
+    const adresse = adressen.find((a) => a.primaryAddress) || adressen[0] || {};
+    return {
+      id: party.id,
+      company: party.company,
+      company2: party.company2,
+      strasse: adresse.street1 || "",
+      plz: adresse.zipcode || "",
+      ort: adresse.city || "",
+      parentPartyId: party.parentPartyId || null,
+      matchedFields
+    };
+  });
 
   let status;
   if (treffer.length === 0) status = "kein Treffer";
@@ -646,7 +653,8 @@ exports.handler = async (event) => {
       nameAlsVorname,
       nameAlsNachname,
       companyResults,
-      company2Results
+      company2Results,
+      addressResults
     ] = await Promise.all([
       emailNormalized ? weclappGet({ "email-eq": emailNormalized }) : [],
       phoneNormalized ? weclappSearchMobilePhone1(phoneNormalized) : [],
@@ -655,8 +663,9 @@ exports.handler = async (event) => {
       phoneNormalized ? weclappGet({ "fixPhone2-eq": phoneNormalized }) : [],
       nameNormalized ? weclappGet({ "firstName-eq": nameNormalized }) : [],
       nameNormalized ? weclappGet({ "lastName-eq": nameNormalized }) : [],
-      companyNormalized ? weclappGet({ "company-eq": companyNormalized }) : [],
-      companyNormalized ? weclappGet({ "company2-eq": companyNormalized }) : []
+      companyNormalized ? weclappGet({ "company-like": `%${companyNormalized}%` }) : [],
+      companyNormalized ? weclappGet({ "company2-like": `%${companyNormalized}%` }) : [],
+      (!companyNormalized && strasse) ? weclappGet({ "addresses.street1-like": `%${strasse}%` }) : []
     ]);
 
     const kontaktErgebnis = auswertenKontakt({
@@ -671,7 +680,8 @@ exports.handler = async (event) => {
 
     const firmaErgebnis = auswertenFirma({
       company: companyResults,
-      company2: company2Results
+      company2: company2Results,
+      adresse: addressResults
     });
 
     const perplexityText = await perplexityRecherche(nameRaw, companyRaw);
