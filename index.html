@@ -293,6 +293,16 @@
       <div class="loading-inline" id="loadingFirma"><span class="spinner"></span>Wird geprüft und recherchiert …</div>
       <div id="firmaBlockErgebnis"></div>
 
+      <!-- KI-Zusammenfassung: erscheint erst, wenn Kontakt UND Firma bestaetigt wurden -->
+      <div id="kiZusammenfassungBereich" style="display:none;">
+        <div class="block-heading">KI-Zusammenfassung</div>
+        <label class="first-in-block" for="kiZusammenfassungText">Zum Kopieren, z.B. fuer Perplexity</label>
+        <textarea id="kiZusammenfassungText" rows="12" readonly style="font-family: monospace; font-size: 13px;"></textarea>
+        <button type="button" id="kiAktualisierenBtn" class="secondary">Zusammenfassung aktualisieren</button>
+        <button type="button" id="kiKopierenBtn">In Zwischenablage kopieren</button>
+        <div class="auswahl-bestaetigt" id="kiKopiertHinweis">✓ In Zwischenablage kopiert.</div>
+      </div>
+
       <!-- Block: Info -->
       <div class="block-heading">Info</div>
 
@@ -535,9 +545,11 @@
           anzeige.textContent = `✓ Bestätigt: bestehender Kontakt "${kandidat.firstName || ""} ${kandidat.lastName || ""}" wird übernommen.`;
         }
         anzeige.style.display = "block";
+        pruefeUndZeigeKIZusammenfassung();
       });
     } else {
       window.ausgewaehlterKontakt = { modus: "neu" };
+      pruefeUndZeigeKIZusammenfassung();
     }
   }
 
@@ -569,6 +581,7 @@
     if (!data.firma || data.firma.status === "kein Treffer") {
       html += `<div class="block neutral"><div class="block-title">🏢 Firma</div>Keine bestehende Firma gefunden — wird neu angelegt.</div>`;
       window.ausgewaehlteFirma = { modus: "neu" };
+      pruefeUndZeigeKIZusammenfassung();
     } else {
       let firmaOptionenHtml = "";
       data.firma.treffer.forEach((f, i) => {
@@ -616,9 +629,84 @@
           anzeige.textContent = `✓ Bestätigt: bestehende Firma "${kandidat.company || kandidat.company2 || ""}" wird übernommen.`;
         }
         anzeige.style.display = "block";
+        pruefeUndZeigeKIZusammenfassung();
       });
     }
   }
+
+  // ---------- KI-Zusammenfassung ----------
+
+  function baueKIZusammenfassung() {
+    const daten = sammleFormularDaten();
+    const kontaktWahl = window.ausgewaehlterKontakt || { modus: "neu" };
+    const firmaWahl = window.ausgewaehlteFirma || { modus: "neu" };
+
+    let kontaktName, kontaktEmail, kontaktTelefon;
+    if (kontaktWahl.modus === "vorhanden" && kontaktWahl.kandidat) {
+      kontaktName = `${kontaktWahl.kandidat.firstName || ""} ${kontaktWahl.kandidat.lastName || ""}`.trim();
+      kontaktEmail = kontaktWahl.kandidat.email || "";
+      kontaktTelefon = kontaktWahl.kandidat.telefon || "";
+    } else {
+      kontaktName = daten.name;
+      kontaktEmail = daten.email;
+      kontaktTelefon = daten.telefon;
+    }
+
+    let firmaName, firmaAdresse;
+    if (firmaWahl.modus === "vorhanden" && firmaWahl.kandidat) {
+      firmaName = firmaWahl.kandidat.company || firmaWahl.kandidat.company2 || "";
+      firmaAdresse = [firmaWahl.kandidat.strasse, [firmaWahl.kandidat.plz, firmaWahl.kandidat.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    } else {
+      firmaName = daten.firma;
+      firmaAdresse = [daten.strasse, [daten.plz, daten.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    }
+
+    const zeilen = [];
+    zeilen.push(`Kontakt: ${kontaktName || "(unbekannt)"}`);
+    if (kontaktEmail) zeilen.push(`E-Mail: ${kontaktEmail}`);
+    if (kontaktTelefon) zeilen.push(`Telefon: ${kontaktTelefon}`);
+    zeilen.push("");
+    zeilen.push(`Firma/Betrieb: ${firmaName || "(unbekannt)"}`);
+    if (daten.betriebsart) zeilen.push(`Betriebsart: ${daten.betriebsart}`);
+    if (firmaAdresse) zeilen.push(`Adresse: ${firmaAdresse}`);
+    if (daten.vkcId) zeilen.push(`VKC-ID: ${daten.vkcId}`);
+    if (daten.vkcUrl) zeilen.push(`VKC-URL: ${daten.vkcUrl}`);
+    if (daten.leadgrund) zeilen.push(`Leadgrund: ${daten.leadgrund}`);
+    if (daten.ticketNummer) zeilen.push(`Ticketnummer: ${daten.ticketNummer}`);
+    if (daten.notizen) {
+      zeilen.push("");
+      zeilen.push("Notizen:");
+      zeilen.push(daten.notizen);
+    }
+
+    return zeilen.join("\n");
+  }
+
+  function pruefeUndZeigeKIZusammenfassung() {
+    const bereich = document.getElementById("kiZusammenfassungBereich");
+    if (window.ausgewaehlterKontakt && window.ausgewaehlteFirma) {
+      bereich.style.display = "block";
+      document.getElementById("kiZusammenfassungText").value = baueKIZusammenfassung();
+    }
+  }
+
+  document.getElementById("kiAktualisierenBtn").addEventListener("click", () => {
+    document.getElementById("kiZusammenfassungText").value = baueKIZusammenfassung();
+  });
+
+  document.getElementById("kiKopierenBtn").addEventListener("click", async () => {
+    const text = document.getElementById("kiZusammenfassungText").value;
+    const hinweis = document.getElementById("kiKopiertHinweis");
+    try {
+      await navigator.clipboard.writeText(text);
+      hinweis.style.display = "block";
+      setTimeout(() => { hinweis.style.display = "none"; }, 2500);
+    } catch (err) {
+      hinweis.textContent = "⚠️ Kopieren fehlgeschlagen — bitte manuell markieren und kopieren.";
+      hinweis.style.color = "var(--red)";
+      hinweis.style.display = "block";
+    }
+  });
 
   // ---------- Ticket erzeugen/aktualisieren ----------
   document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
