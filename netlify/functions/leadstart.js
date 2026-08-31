@@ -492,6 +492,23 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
 }
 
 
+// Zerlegt den vollstaendig eingegebenen Namen in einzelne Woerter und sucht
+// jedes davon per Teilstring-Suche (-like) sowohl gegen firstName als auch
+// gegen lastName. Notwendig, weil weclapp intern getrennte Vor-/Nachname-Felder
+// fuehrt, waehrend wir bewusst nur ein zusammenhaengendes Namensfeld erfassen.
+async function sucheNachName(nameNormalized) {
+  const tokens = nameNormalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+
+  const promises = [];
+  for (const token of tokens) {
+    promises.push(weclappGet({ "firstName-like": `%${token}%` }));
+    promises.push(weclappGet({ "lastName-like": `%${token}%` }));
+  }
+  const ergebnisse = await Promise.all(promises);
+  return ergebnisse.flat();
+}
+
 // ---------- Handler ----------
 
 exports.handler = async (event) => {
@@ -658,8 +675,7 @@ exports.handler = async (event) => {
       mobilePhone2Results,
       phoneResults,
       fixPhone2Results,
-      nameAlsVorname,
-      nameAlsNachname,
+      nameResults,
       companyResults,
       company2Results,
       addressResults
@@ -669,8 +685,7 @@ exports.handler = async (event) => {
       phoneNormalized ? weclappGet({ "mobilePhone2-eq": phoneNormalized }) : [],
       phoneNormalized ? weclappGet({ "phone-eq": phoneNormalized }) : [],
       phoneNormalized ? weclappGet({ "fixPhone2-eq": phoneNormalized }) : [],
-      nameNormalized ? weclappGet({ "firstName-eq": nameNormalized }) : [],
-      nameNormalized ? weclappGet({ "lastName-eq": nameNormalized }) : [],
+      nameNormalized ? sucheNachName(nameNormalized) : [],
       companyNormalized ? weclappGet({ "company-like": `%${companyNormalized}%` }) : [],
       companyNormalized ? weclappGet({ "company2-like": `%${companyNormalized}%` }) : [],
       (!companyNormalized && strasse) ? weclappGet({ "addresses.street1-like": `%${strasse}%` }) : []
@@ -682,8 +697,7 @@ exports.handler = async (event) => {
       mobilePhone2: mobilePhone2Results,
       phone: phoneResults,
       fixPhone2: fixPhone2Results,
-      nameAlsVorname,
-      nameAlsNachname
+      name: nameResults
     });
 
     const firmaErgebnis = auswertenFirma({
