@@ -491,10 +491,11 @@
     } else {
       let optionenHtml = "";
       data.treffer.forEach((t, i) => {
+        const kontaktInfo = [t.email, t.telefon].filter(Boolean).join(" · ");
         optionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="kontaktAuswahl" id="kontakt_${i}" value="${t.id}">
-            <label for="kontakt_${i}">${t.firstName || ""} ${t.lastName || ""} <em>(Sicherheit: ${confidenceLabel(t.confidence)})</em></label>
+            <label for="kontakt_${i}">${t.firstName || ""} ${t.lastName || ""}${kontaktInfo ? ` <em>(${kontaktInfo})</em>` : ""} <em>— Sicherheit: ${confidenceLabel(t.confidence)}</em></label>
           </div>`;
       });
       optionenHtml += `
