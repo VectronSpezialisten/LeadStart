@@ -20,6 +20,22 @@ const TICKET_STATUS_ID = "1936022";    // Beratung & FollowUp
 const TICKET_PRIORITY_ID = "3660";     // normal
 const TICKET_CHANNEL_ID = "2539303";   // Vectron Sales
 
+// Custom-Attribute-IDs am Ticket (Gruppe "POS & Pay")
+const ATTR_LEAD_ID = "2541107";
+const ATTR_LEAD_URL = "2541111";
+const ATTR_LEAD_GRUND = "2541201";
+const LEAD_GRUND_OPTIONEN = {
+  "Betreuungswechsel": "2541202",
+  "Funktionsupgrade": "2541203",
+  "Kosten & Preise": "2541204",
+  "Neueröffnung": "2541205",
+  "Prozessanforderung": "2541206",
+  "Störung": "2541207",
+  "Systemwechsel": "2541208",
+  "TSE-Ablauf": "2541209",
+  "Vertragsablauf": "2541210"
+};
+
 
 // ---------- Zugangsprüfung ----------
 
@@ -377,7 +393,22 @@ function baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVo
   return teile.join("");
 }
 
-async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate }) {
+// Baut die customAttributes-Liste fuer VKC-ID, VKC-URL und Leadgrund.
+// Nur Felder mit tatsaechlich vorhandenem Wert werden gesetzt.
+function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
+  const attrs = [];
+  if (vkcId) attrs.push({ attributeDefinitionId: ATTR_LEAD_ID, stringValue: vkcId });
+  if (vkcUrl) attrs.push({ attributeDefinitionId: ATTR_LEAD_URL, stringValue: vkcUrl });
+  if (leadgrund && LEAD_GRUND_OPTIONEN[leadgrund]) {
+    attrs.push({
+      attributeDefinitionId: ATTR_LEAD_GRUND,
+      selectedValues: [{ id: LEAD_GRUND_OPTIONEN[leadgrund] }]
+    });
+  }
+  return attrs;
+}
+
+async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund }) {
   const heute = Date.now();
   const payload = {
     subject: (subject || "Neuer Lead").slice(0, 150),
@@ -392,7 +423,8 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
     billable: false,
     disableEmailTemplates: false,
     isTemplate: false,
-    legacyTimeAndMaterialTicket: false
+    legacyTimeAndMaterialTicket: false,
+    customAttributes: baueCustomAttributes({ vkcId, vkcUrl, leadgrund })
   };
 
   if (solutionDueDate) {
@@ -402,6 +434,46 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
 
   const created = await weclappPost("/ticket", payload);
   return created;
+}
+
+// Bestehendes Ticket per Ticketnummer (z.B. "tb12345") suchen.
+async function ticketSuchenPerNummer(ticketNummer) {
+  const url = new URL(`${WECLAPP_BASE}/ticket`);
+  url.searchParams.set("ticketNumber-eq", ticketNummer);
+  const response = await fetch(url.toString(), {
+    headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
+  });
+  if (!response.ok) {
+    throw new Error(`weclapp-Fehler (${response.status}) bei Ticketsuche nach Nummer ${ticketNummer}`);
+  }
+  const data = await response.json();
+  const treffer = data.result || [];
+  return treffer.length > 0 ? treffer[0] : null;
+}
+
+// Bestehendes Ticket aktualisieren (PUT braucht das komplette Objekt).
+// Bestehende customAttributes bleiben erhalten, unsere drei Felder werden ergaenzt/ueberschrieben.
+async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate }) {
+  const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
+
+  ticket.partyId = partyId;
+  ticket.contactId = contactId;
+  if (beschreibung) {
+    ticket.description = (ticket.description || "") + "<br><br>" + beschreibung;
+  }
+  if (solutionDueDate) {
+    const parsed = new Date(solutionDueDate).getTime();
+    if (!Number.isNaN(parsed)) ticket.solutionDueDate = parsed;
+  }
+
+  const neueAttrs = baueCustomAttributes({ vkcId, vkcUrl, leadgrund });
+  const bestehendeAttrs = (ticket.customAttributes || []).filter(
+    (a) => !neueAttrs.some((n) => n.attributeDefinitionId === a.attributeDefinitionId)
+  );
+  ticket.customAttributes = [...bestehendeAttrs, ...neueAttrs];
+
+  const aktualisiert = await weclappPut(`/ticket/id/${ticketId}`, ticket);
+  return aktualisiert;
 }
 
 
@@ -448,6 +520,8 @@ exports.handler = async (event) => {
   const vkcId = body.vkcId || "";
   const vkcUrl = body.vkcUrl || "";
   const notizen = body.notizen || "";
+  const leadgrund = body.leadgrund || "";
+  const ticketNummer = body.ticketNummer || "";
   const erfasserEmail = body.erfasserEmail || "";
   const passwort = body.passwort || "";
 
@@ -489,19 +563,57 @@ exports.handler = async (event) => {
       }
 
       const beschreibung = baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon: erfasserEmail });
-      const ticket = await ticketAnlegen({
-        partyId: firmaId,
-        contactId: kontaktId,
-        subject: companyRaw || nameRaw,
-        beschreibung,
-        solutionDueDate
-      });
+
+      let ticket;
+      let aktion;
+
+      if (ticketNummer) {
+        const gefundenesTicket = await ticketSuchenPerNummer(ticketNummer);
+        if (gefundenesTicket) {
+          ticket = await ticketAktualisieren(gefundenesTicket.id, {
+            partyId: firmaId,
+            contactId: kontaktId,
+            beschreibung,
+            vkcId,
+            vkcUrl,
+            leadgrund,
+            solutionDueDate
+          });
+          aktion = "aktualisiert";
+        } else {
+          // Ticketnummer angegeben, aber nicht gefunden -> Fallback: neu anlegen, aber deutlich kennzeichnen
+          ticket = await ticketAnlegen({
+            partyId: firmaId,
+            contactId: kontaktId,
+            subject: companyRaw || nameRaw,
+            beschreibung: beschreibung + `<br><br><i>Hinweis: Ticketnummer "${ticketNummer}" wurde nicht gefunden, neues Ticket wurde stattdessen angelegt.</i>`,
+            solutionDueDate,
+            vkcId,
+            vkcUrl,
+            leadgrund
+          });
+          aktion = "neu_angelegt_ticketnummer_nicht_gefunden";
+        }
+      } else {
+        ticket = await ticketAnlegen({
+          partyId: firmaId,
+          contactId: kontaktId,
+          subject: companyRaw || nameRaw,
+          beschreibung,
+          solutionDueDate,
+          vkcId,
+          vkcUrl,
+          leadgrund
+        });
+        aktion = "neu_angelegt";
+      }
 
       return {
         statusCode: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         body: JSON.stringify({
           erfolg: true,
+          aktion,
           kontaktId,
           firmaId,
           ticketId: ticket.id,
@@ -584,7 +696,9 @@ exports.handler = async (event) => {
           ort,
           vkcId,
           vkcUrl,
-          notizen
+          notizen,
+          leadgrund,
+          ticketNummer
         },
         erfasstVon: erfasserEmail
       })
