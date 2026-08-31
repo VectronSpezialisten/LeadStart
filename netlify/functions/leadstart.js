@@ -492,12 +492,21 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
 }
 
 
+// weclapps "-like"-Operator ist case-sensitiv (empirisch bestaetigt: "müslüm ejder"
+// findet nichts, "Müslüm Ejder" findet den Kontakt). Deshalb wird jedes Wort vor der
+// Suche in die uebliche Schreibweise gebracht (erster Buchstabe gross, Rest klein),
+// unabhaengig davon, wie der Nutzer es eingetippt hat.
+function titelCase(wort) {
+  if (!wort) return wort;
+  return wort.charAt(0).toUpperCase() + wort.slice(1).toLowerCase();
+}
+
 // Zerlegt den vollstaendig eingegebenen Namen in einzelne Woerter und sucht
 // jedes davon per Teilstring-Suche (-like) sowohl gegen firstName als auch
 // gegen lastName. Notwendig, weil weclapp intern getrennte Vor-/Nachname-Felder
 // fuehrt, waehrend wir bewusst nur ein zusammenhaengendes Namensfeld erfassen.
 async function sucheNachName(nameNormalized) {
-  const tokens = nameNormalized.split(/\s+/).filter(Boolean);
+  const tokens = nameNormalized.split(/\s+/).filter(Boolean).map(titelCase);
   if (tokens.length === 0) return [];
 
   const promises = [];
@@ -508,7 +517,6 @@ async function sucheNachName(nameNormalized) {
   const ergebnisse = await Promise.all(promises);
   return ergebnisse.flat();
 }
-
 // ---------- Handler ----------
 
 exports.handler = async (event) => {
