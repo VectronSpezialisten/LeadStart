@@ -10,9 +10,16 @@
 //                         z.B. carsten.brauer@kasse-stimmt.de,anna@kasse-stimmt.de
 //
 // Aufruf vom Frontend: POST /.netlify/functions/leadstart
-// Body: { name, telefon, email, firma, betriebsart, strasse, plz, ort, vkcId, vkcUrl, notizen, erfasserEmail, passwort }
+// Body: { name, telefon, email, firma, erfasserEmail, passwort }
 
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
+
+// Feste Konfigurationswerte fuer neu erzeugte Tickets (bei Bedarf hier anpassen)
+const TICKET_CATEGORY_ID = "242030";   // Office (unter Team POS)
+const TICKET_STATUS_ID = "1936022";    // Beratung & FollowUp
+const TICKET_PRIORITY_ID = "3660";     // normal
+const TICKET_CHANNEL_ID = "2539303";   // Vectron Sales
+
 
 // ---------- Zugangsprüfung ----------
 
@@ -225,6 +232,179 @@ Gib eine kurze, prägnante Einschätzung (max. 4 Sätze) inkl. Rolle der genannt
   }
 }
 
+
+// ---------- Standard-Pflichtfelder fuer neue Party-Objekte ----------
+// Diese Werte spiegeln ein real bestehendes party-Objekt wider (empirisch geprueft),
+// damit beim Anlegen keine der zahlreichen weclapp-Pflichtfelder fehlt.
+function standardPartyFelder() {
+  return {
+    commissionBlock: false,
+    competitor: false,
+    customerActive: true,
+    customerAllowDropshippingOrderCreation: true,
+    customerBlocked: false,
+    customerDeliveryBlock: false,
+    customerInsolvent: false,
+    customerInsured: false,
+    customerUseCustomsTariffNumber: false,
+    enableDropshippingInNewSupplySources: false,
+    factoring: false,
+    fixedResponsibleUser: false,
+    formerSalesPartner: false,
+    habitualExporter: false,
+    invoiceBlock: false,
+    optInEmail: false,
+    optInLetter: false,
+    optInPhone: false,
+    optInSms: false,
+    purchaseViaPlafond: false,
+    salesPartner: false,
+    supplier: false,
+    supplierActive: true,
+    supplierMergeItemsForOcrInvoiceUpload: false,
+    supplierOrderBlock: false
+  };
+}
+
+async function weclappPost(path, payload) {
+  const url = `${WECLAPP_BASE}${path}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      AuthenticationToken: process.env.WECLAPP_API_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`weclapp-Fehler (${response.status}) bei POST ${path}: ${errText}`);
+  }
+  return response.json();
+}
+
+async function weclappPut(path, payload) {
+  const url = `${WECLAPP_BASE}${path}`;
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      AuthenticationToken: process.env.WECLAPP_API_TOKEN,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`weclapp-Fehler (${response.status}) bei PUT ${path}: ${errText}`);
+  }
+  return response.json();
+}
+
+async function weclappGetById(path) {
+  const url = `${WECLAPP_BASE}${path}`;
+  const response = await fetch(url, {
+    headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
+  });
+  if (!response.ok) {
+    throw new Error(`weclapp-Fehler (${response.status}) bei GET ${path}`);
+  }
+  return response.json();
+}
+
+// Neuen Kontakt (Person) anlegen. Bewusst nur ein Namensfeld (firstName) befuellt,
+// kein Split in Vor-/Nachname, wie im Lead-Prozess an anderer Stelle schon festgelegt.
+async function kontaktAnlegen({ name, telefon, email }) {
+  const payload = {
+    partyType: "PERSON",
+    firstName: name || "",
+    customerBusinessType: "B2C",
+    ...standardPartyFelder()
+  };
+  if (telefon) payload.mobilePhone1 = telefon;
+  if (email) payload.email = email;
+
+  const created = await weclappPost("/party", payload);
+  return created.id;
+}
+
+// Bestehende Firma laden, Kontakt-ID im contacts-Array ergaenzen (nicht ersetzen),
+// falls er dort noch nicht steht. Bestehende Verknuepfungen des Kontakts bleiben unberuehrt.
+async function kontaktZuFirmaHinzufuegen(firmaId, kontaktId) {
+  const firma = await weclappGetById(`/party/id/${firmaId}`);
+  const vorhandeneKontakte = firma.contacts || [];
+  const bereitsVerknuepft = vorhandeneKontakte.some((c) => c.id === kontaktId);
+
+  if (!bereitsVerknuepft) {
+    firma.contacts = [...vorhandeneKontakte, { id: kontaktId }];
+    await weclappPut(`/party/id/${firmaId}`, firma);
+  }
+  return firmaId;
+}
+
+// Neue Firma anlegen, Kontakt direkt im contacts-Array mitgeben.
+async function firmaAnlegen({ firma, betriebsart, strasse, plz, ort, kontaktId }) {
+  const payload = {
+    partyType: "ORGANIZATION",
+    company: firma || "",
+    customerBusinessType: "B2B",
+    contacts: kontaktId ? [{ id: kontaktId }] : [],
+    ...standardPartyFelder()
+  };
+
+  if (strasse || plz || ort) {
+    payload.addresses = [
+      {
+        street1: strasse || "",
+        zipcode: plz || "",
+        city: ort || "",
+        countryCode: "DE",
+        primaryAddress: true
+      }
+    ];
+  }
+
+  const created = await weclappPost("/party", payload);
+  return created.id;
+}
+
+function baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon }) {
+  let teile = [];
+  if (notizen) teile.push(notizen.replace(/\n/g, "<br>"));
+  if (betriebsart) teile.push(`<br><br><b>Betriebsart:</b> ${betriebsart}`);
+  if (vkcId) teile.push(`<br><b>VKC-ID:</b> ${vkcId}`);
+  if (vkcUrl) teile.push(`<br><b>VKC-URL:</b> <a href="${vkcUrl}">${vkcUrl}</a>`);
+  if (erfasstVon) teile.push(`<br><br><i>Erfasst über Leadstart von: ${erfasstVon}</i>`);
+  return teile.join("");
+}
+
+async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate }) {
+  const heute = Date.now();
+  const payload = {
+    subject: (subject || "Neuer Lead").slice(0, 150),
+    description: beschreibung || "",
+    partyId,
+    contactId,
+    ticketCategoryId: TICKET_CATEGORY_ID,
+    ticketStatusId: TICKET_STATUS_ID,
+    ticketPriorityId: TICKET_PRIORITY_ID,
+    ticketChannelId: TICKET_CHANNEL_ID,
+    followUpDate: heute,
+    billable: false,
+    disableEmailTemplates: false,
+    isTemplate: false,
+    legacyTimeAndMaterialTicket: false
+  };
+
+  if (solutionDueDate) {
+    const parsed = new Date(solutionDueDate).getTime();
+    if (!Number.isNaN(parsed)) payload.solutionDueDate = parsed;
+  }
+
+  const created = await weclappPost("/ticket", payload);
+  return created;
+}
+
+
 // ---------- Handler ----------
 
 exports.handler = async (event) => {
@@ -280,6 +460,64 @@ exports.handler = async (event) => {
     };
   }
 
+  // ---------- Action: create (Firma/Kontakt anlegen, Ticket erzeugen) ----------
+  if (body.action === "create") {
+    try {
+      const kontaktAuswahl = body.kontakt || { modus: "neu" };
+      const firmaAuswahl = body.firma_auswahl || { modus: "neu" };
+      const solutionDueDate = body.solutionDueDate || "";
+
+      let kontaktId;
+      if (kontaktAuswahl.modus === "vorhanden" && kontaktAuswahl.partyId) {
+        kontaktId = kontaktAuswahl.partyId;
+      } else {
+        kontaktId = await kontaktAnlegen({ name: nameRaw, telefon: phoneRaw, email: emailRaw });
+      }
+
+      let firmaId;
+      if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
+        firmaId = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
+      } else {
+        firmaId = await firmaAnlegen({
+          firma: companyRaw,
+          betriebsart,
+          strasse,
+          plz,
+          ort,
+          kontaktId
+        });
+      }
+
+      const beschreibung = baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon: erfasserEmail });
+      const ticket = await ticketAnlegen({
+        partyId: firmaId,
+        contactId: kontaktId,
+        subject: companyRaw || nameRaw,
+        beschreibung,
+        solutionDueDate
+      });
+
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          erfolg: true,
+          kontaktId,
+          firmaId,
+          ticketId: ticket.id,
+          ticketSubject: ticket.subject
+        })
+      };
+    } catch (err) {
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: err.message })
+      };
+    }
+  }
+
+  // ---------- Action: check (Standardverhalten, bisherige Logik) ----------
   const nameNormalized = normalizeName(nameRaw);
   const emailNormalized = normalizeEmail(emailRaw);
   const phoneNormalized = normalizePhone(phoneRaw);
