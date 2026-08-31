@@ -131,7 +131,7 @@ async function weclappSearchMobilePhone1(targetPhone) {
     const data = await response.json();
     const results = data.result || [];
 
-    allMatches.push(...results.filter((p) => p.mobilePhone1 === targetPhone));
+    allMatches.push(...results.filter((p) => p.mobilePhone1 && p.mobilePhone1.includes(targetPhone)));
 
     hasMore = results.length === pageSize;
     page++;
@@ -517,6 +517,7 @@ async function sucheNachName(nameNormalized) {
   const ergebnisse = await Promise.all(promises);
   return ergebnisse.flat();
 }
+
 // ---------- Handler ----------
 
 exports.handler = async (event) => {
@@ -688,11 +689,11 @@ exports.handler = async (event) => {
       company2Results,
       addressResults
     ] = await Promise.all([
-      emailNormalized ? weclappGet({ "email-eq": emailNormalized }) : [],
+      emailNormalized ? weclappGet({ "email-like": `%${emailNormalized}%` }) : [],
       phoneNormalized ? weclappSearchMobilePhone1(phoneNormalized) : [],
-      phoneNormalized ? weclappGet({ "mobilePhone2-eq": phoneNormalized }) : [],
-      phoneNormalized ? weclappGet({ "phone-eq": phoneNormalized }) : [],
-      phoneNormalized ? weclappGet({ "fixPhone2-eq": phoneNormalized }) : [],
+      phoneNormalized ? weclappGet({ "mobilePhone2-like": `%${phoneNormalized}%` }) : [],
+      phoneNormalized ? weclappGet({ "phone-like": `%${phoneNormalized}%` }) : [],
+      phoneNormalized ? weclappGet({ "fixPhone2-like": `%${phoneNormalized}%` }) : [],
       nameNormalized ? sucheNachName(nameNormalized) : [],
       companyNormalized ? weclappGet({ "company-like": `%${companyNormalized}%` }) : [],
       companyNormalized ? weclappGet({ "company2-like": `%${companyNormalized}%` }) : [],
