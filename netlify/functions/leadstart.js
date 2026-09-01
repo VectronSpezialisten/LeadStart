@@ -463,7 +463,7 @@ function berlinZeitstempel() {
   });
 }
 
-async function kommentarErstellen(ticketId, notizen, erfasstVon, betriebsart) {
+async function kommentarErstellen(ticketId, notizen, erfasstVon, betriebsart, bearbeiter) {
   // comment.comment ist laut Spezifikation reiner Text (kein "format": "html" wie
   // bei ticket.description) - HTML-Tags wuerden hier woertlich angezeigt statt
   // interpretiert. Deshalb einfache Zeilenumbrueche statt <br>/<b>.
@@ -478,6 +478,12 @@ async function kommentarErstellen(ticketId, notizen, erfasstVon, betriebsart) {
   // dient spaeter als Grundlage fuer eine KI-generierte Zusammenfassung.
   if (betriebsart) {
     text += `\n\nBetriebsart: ${betriebsart}`;
+  }
+  // Bearbeiter-Vorschlag bewusst nur als Hinweis im Kommentar, nicht als direkt
+  // gesetztes Feld - assignedUserId beim Aktualisieren zu setzen fuehrt bei
+  // Sales-Navigator-Tickets zuverlaessig zu einem Fehler (siehe ticketAktualisieren).
+  if (bearbeiter) {
+    text += `\n\nVorschlag Zuweisung: ${bearbeiter} (bitte bei Bedarf manuell in weclapp zuweisen)`;
   }
   if (notizen) {
     text += `\n\n${notizen}`;
@@ -620,42 +626,20 @@ async function ticketSuchenPerNummer(ticketNummer) {
   return treffer.length > 0 ? treffer[0] : null;
 }
 
-async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter, betriebsart }) {
+// WICHTIG: ticketStatusId und assignedUserId werden beim Aktualisieren bewusst
+// NICHT gesetzt. Empirisch nachgewiesen (Vergleich mit einem am 28.08. erfolgreich
+// aktualisierten Mail2Ticket-Ticket): Sobald diese beiden Felder beim PUT eines
+// bestehenden Tickets mitgeschickt werden, schlaegt der Aufruf bei Tickets aus dem
+// Sales-Navigator/Mail2Ticket-Kanal zuverlaessig fehl ("property resolvedYourIssue
+// is read-only", unabhaengig vom sonstigen Payload). Ohne diese beiden Felder
+// funktioniert derselbe Ablauf nachweislich. Die Bearbeiter-Auswahl geht dadurch
+// nicht verloren, sondern landet stattdessen als Hinweis im Kommentar.
+async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
-  // Schreibgeschuetzte Felder entfernen, bevor das komplette Objekt per PUT
-  // zurueckgeschickt wird. "ccEmailAddresses" ist in der Spezifikation NICHT als
-  // schreibgeschuetzt markiert, wird zur Laufzeit aber trotzdem abgelehnt
-  // ("property ccEmailAddresses cannot be updated") - dasselbe Muster wie beim
-  // "competitor"-Feld bei party. Die uebrigen Felder sind laut Spezifikation
-  // offiziell readOnly und werden vorsorglich ebenfalls entfernt.
-  const NICHT_ZURUECKSCHREIBEN = [
-    "ccEmailAddresses",
-    "billableStatus",
-    "finishedDate",
-    "invoicingStatus",
-    "performanceRecordedStatus",
-    "publicPageExpirationDate",
-    "publicPageUuid",
-    "resolvedYourIssue",
-    "salesOrderId",
-    "ticketRatingComment",
-    "ticketRatingDate"
-  ];
-  for (const feld of NICHT_ZURUECKSCHREIBEN) {
-    delete ticket[feld];
-  }
-
-  // Der Status muss ZWINGEND vor/gleichzeitig mit assignedUserId und followUpDate
-  // gesetzt werden: weclapp verlangt bei internem Status "UNASSIGNED" (z.B. bei
-  // frisch vom Sales Navigator erzeugten Tickets) assignedUserId=null und verbietet
-  // followUpDate komplett. Erst durch den Statuswechsel auf "Beratung & FollowUp"
-  // (intern WAITING) sind beide Felder ueberhaupt zulaessig.
-  ticket.ticketStatusId = TICKET_STATUS_ID;
   ticket.partyId = partyId;
   ticket.contactId = contactId;
   ticket.followUpDate = Date.now();
-  ticket.assignedUserId = ermittleAssignedUserId(bearbeiter);
   if (beschreibung) {
     ticket.description = (ticket.description || "") + "<br><br>" + beschreibung;
   }
@@ -862,18 +846,44 @@ exports.handler = async (event) => {
       if (ticketNummer) {
         const gefundenesTicket = await ticketSuchenPerNummer(ticketNummer);
         if (gefundenesTicket) {
-          ticket = await ticketAktualisieren(gefundenesTicket.id, {
-            partyId: firmaId,
-            contactId: kontaktId,
-            beschreibung,
-            vkcId,
-            vkcUrl,
-            leadgrund,
-            solutionDueDate,
-            bearbeiter,
-            betriebsart
-          });
-          aktion = "aktualisiert";
+          // Bekannter weclapp-Bug: Tickets aus dem Mail2Ticket/Sales-Navigator-Kanal
+          // lassen sich derzeit ueber die API grundsaetzlich nicht per PUT aktualisieren
+          // ("property resolvedYourIssue is read-only", unabhaengig vom Payload -
+          // manuelle Bearbeitung in der weclapp-Oberflaeche funktioniert einwandfrei).
+          // Solange das nicht von weclapp behoben ist: Kontakt/Firma wurden bereits
+          // erfolgreich verknuepft, das Ticket selbst faellt zurueck auf "manuell
+          // nachtragen", statt den kompletten Vorgang mit einer harten Fehlermeldung
+          // abzubrechen.
+          try {
+            ticket = await ticketAktualisieren(gefundenesTicket.id, {
+              partyId: firmaId,
+              contactId: kontaktId,
+              beschreibung,
+              vkcId,
+              vkcUrl,
+              leadgrund,
+              solutionDueDate
+            });
+            aktion = "aktualisiert";
+          } catch (ticketFehler) {
+            // Bekannter weclapp-Bug: Ticket kann nicht aktualisiert werden. Statt
+            // manueller Nacharbeit legen wir stattdessen ein NEUES Ticket an (das
+            // funktioniert zuverlaessig) und verweisen darin auf die urspruengliche
+            // Ticketnummer. Das alte Sales-Navigator-Ticket bleibt unveraendert bestehen.
+            ticket = await ticketAnlegen({
+              partyId: firmaId,
+              contactId: kontaktId,
+              subject: betreffName,
+              beschreibung: beschreibung + `<br><br><i>Hinweis: Ticket "${gefundenesTicket.ticketNumber}" konnte nicht automatisch aktualisiert werden - vermutlich weil es noch im Status "Noch nicht zugewiesen" ist (dieser Uebergang scheitert bei Sales-Navigator-Tickets ueber die API empirisch immer, funktioniert aber manuell in weclapp problemlos). Dieses neue Ticket wurde stattdessen angelegt. Tipp: Wird "${gefundenesTicket.ticketNumber}" zuerst manuell in weclapp einem Bearbeiter zugewiesen, sollte eine erneute Aktualisierung ueber Leadstart danach funktionieren - das urspruengliche Ticket bleibt bis dahin unveraendert bestehen.</i>`,
+              solutionDueDate,
+              vkcId,
+              vkcUrl,
+              leadgrund,
+              bearbeiter,
+              betriebsart
+            });
+            aktion = "neu_angelegt_ticket_update_fehlgeschlagen";
+          }
         } else {
           ticket = await ticketAnlegen({
             partyId: firmaId,
@@ -905,7 +915,7 @@ exports.handler = async (event) => {
         aktion = "neu_angelegt";
       }
 
-      await kommentarErstellen(ticket.id, notizen, erfasserEmail, betriebsart);
+      await kommentarErstellen(ticket.id, notizen, erfasserEmail, betriebsart, bearbeiter);
 
       return {
         statusCode: 200,
@@ -1030,3 +1040,4 @@ exports.handler = async (event) => {
     };
   }
 };
+
