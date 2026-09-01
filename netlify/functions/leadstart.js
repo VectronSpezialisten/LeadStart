@@ -10,7 +10,7 @@
 //                         z.B. carsten.brauer@kasse-stimmt.de,anna@kasse-stimmt.de
 //
 // Aufruf vom Frontend: POST /.netlify/functions/leadstart
-// Body: { name, telefon, email, firma, erfasserEmail, passwort }
+// Body: { vorname, nachname, telefon, email, firma, erfasserEmail, passwort }
 
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
 
@@ -19,10 +19,24 @@ const TICKET_CATEGORY_ID = "242030";   // Office (unter Team POS)
 const TICKET_STATUS_ID = "1936022";    // Beratung & FollowUp
 const TICKET_PRIORITY_ID = "3660";     // normal
 const TICKET_CHANNEL_ID = "2539303";   // Vectron Sales
+const DEFAULT_ASSIGNED_USER_ID = "17430"; // Karsten Brauer - Fallback, falls kein Bearbeiter ausgewaehlt wurde
+
+// Zuordnung Anmelde-E-Mail -> weclapp-User-ID, fuer die manuelle Bearbeiter-Zuweisung im Formular.
+const BEARBEITER_USER_IDS = {
+  "karsten.brauer@kasse-stimmt.de": "17430",
+  "judith.thiede@kasse-stimmt.de": "17437",
+  "katja.malyshkina@kasse-stimmt.de": "1057232"
+};
+
+function ermittleAssignedUserId(bearbeiterEmail) {
+  const normalisiert = (bearbeiterEmail || "").trim().toLowerCase();
+  return BEARBEITER_USER_IDS[normalisiert] || DEFAULT_ASSIGNED_USER_ID;
+}
 
 // Custom-Attribute-IDs am Ticket (Gruppe "POS & Pay")
 const ATTR_LEAD_ID = "2541107";
 const ATTR_LEAD_URL = "2541111";
+const ATTR_LEAD_BETRIEBSART = "2541579";
 const ATTR_LEAD_GRUND = "2541201";
 const LEAD_GRUND_OPTIONEN = {
   "Betreuungswechsel": "2541202",
@@ -87,11 +101,6 @@ function normalizeCompanyName(name) {
 
 // ---------- weclapp-Zugriff ----------
 
-// Blaettert vollstaendig durch alle Seiten, statt nur die erste (Standard-)Seite
-// zu lesen. Notwendig, weil haeufige Suchbegriffe (z.B. Ort "Berlin") leicht mehr
-// als eine Seite Treffer liefern koennen - ein einzelner Treffer wuerde sonst
-// je nach interner Sortierung von weclapp zufaellig ausserhalb der ersten Seite
-// liegen und faelschlich als "kein Treffer" erscheinen.
 async function weclappGet(params) {
   const pageSize = 200;
   let page = 1;
@@ -123,9 +132,6 @@ async function weclappGet(params) {
   return alleErgebnisse;
 }
 
-// mobilePhone1 ist bei weclapp strukturell nicht filterbar (x-weclapp.filterable: false,
-// bestätigt sowohl in API v1 als auch v2). Daher: alle Kontakte seitenweise laden und
-// im Code vergleichen. Nichts davon wird gespeichert, nur für diesen einen Request genutzt.
 async function weclappSearchMobilePhone1(targetPhone) {
   let allMatches = [];
   let page = 1;
@@ -160,10 +166,6 @@ async function weclappSearchMobilePhone1(targetPhone) {
 
 const TELEFON_FELDER = ["mobilePhone1", "mobilePhone2", "phone", "fixPhone2"];
 
-// benoetigteKategorien = welche der drei Kontakt-Kategorien (name, email, telefon)
-// tatsaechlich ausgefuellt wurden. Ein Treffer wird nur angezeigt, wenn ER ALLE
-// davon tatsaechlich erfuellt (strikte Und-Verknuepfung). "telefon" gilt als erfuellt,
-// sobald irgendeines der vier internen Telefonfelder getroffen hat.
 function auswertenKontakt(sources, benoetigteKategorien = []) {
   const partyMap = new Map();
 
@@ -199,7 +201,6 @@ function auswertenKontakt(sources, benoetigteKategorien = []) {
     };
   });
 
-  // Strikt: jede ausgefuellte Kategorie muss beim Treffer tatsaechlich erfuellt sein.
   treffer = treffer.filter((t) =>
     benoetigteKategorien.every((kategorie) => {
       if (kategorie === "telefon") return t.matchedFields.some((f) => TELEFON_FELDER.includes(f));
@@ -207,7 +208,6 @@ function auswertenKontakt(sources, benoetigteKategorien = []) {
     })
   );
 
-  // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
   treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
 
   let status;
@@ -218,10 +218,6 @@ function auswertenKontakt(sources, benoetigteKategorien = []) {
   return { status, anzahl: treffer.length, treffer };
 }
 
-// benoetigteFelder = welche der vier Firmen-Suchfelder (name, strasse, plz, ort)
-// tatsaechlich ausgefuellt wurden. Ein Treffer wird nur angezeigt, wenn ER ALLE
-// davon tatsaechlich erfuellt (strikte Und-Verknuepfung). Der Nutzer steuert die
-// Trefferzahl damit selbst: mehr Felder ausfuellen = enger, Felder entfernen = weiter.
 function auswertenFirma(sources, benoetigteFelder = []) {
   const firmaMap = new Map();
 
@@ -241,6 +237,7 @@ function auswertenFirma(sources, benoetigteFelder = []) {
       id: party.id,
       company: party.company,
       company2: party.company2,
+      kundennummer: party.customerNumber || "",
       strasse: adresse.street1 || "",
       plz: adresse.zipcode || "",
       ort: adresse.city || "",
@@ -250,10 +247,8 @@ function auswertenFirma(sources, benoetigteFelder = []) {
     };
   });
 
-  // Strikt: jedes ausgefuellte Feld muss beim Treffer tatsaechlich vorhanden sein.
   treffer = treffer.filter((t) => benoetigteFelder.every((feld) => t.matchedFields.includes(feld)));
 
-  // Sicherste Treffer zuerst anzeigen (hoch -> mittel -> niedrig).
   treffer.sort((a, b) => konfidenzRang(b.confidence) - konfidenzRang(a.confidence));
 
   let status;
@@ -267,7 +262,6 @@ function auswertenFirma(sources, benoetigteFelder = []) {
 // ---------- Perplexity ----------
 
 async function perplexityRecherche(name, firma) {
-  // Solange kein Key hinterlegt ist: sauber überspringen, kein Fehler, kein Blockieren des restlichen Ergebnisses.
   if (!process.env.PERPLEXITY_API_KEY) {
     return "Recherche noch nicht aktiviert (kein Perplexity-API-Key hinterlegt).";
   }
@@ -300,22 +294,15 @@ Gib eine kurze, prägnante Einschätzung (max. 4 Sätze) inkl. Rolle der genannt
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "Keine Recherche möglich.";
   } catch (err) {
-    // Netzwerkfehler o.ä. sollen den restlichen Duplikat-Check nicht zu Fall bringen.
     return "Recherche konnte nicht durchgeführt werden (technischer Fehler).";
   }
 }
 
 
 // ---------- Standard-Pflichtfelder fuer neue Party-Objekte ----------
-// Diese Werte spiegeln ein real bestehendes party-Objekt wider (empirisch geprueft),
-// damit beim Anlegen keine der zahlreichen weclapp-Pflichtfelder fehlt.
 function standardPartyFelder() {
   return {
     commissionBlock: false,
-    // "competitor" bewusst weggelassen: der verwendete API-Token hat dafuer
-    // keine Berechtigung (weclapp antwortet mit 403 "missing permissions for
-    // competitor"), obwohl das Feld laut Spezifikation als Pflichtfeld gilt.
-    // Ohne das Feld setzt weclapp offenbar einen internen Standardwert.
     customerActive: true,
     customerAllowDropshippingOrderCreation: true,
     customerBlocked: false,
@@ -387,11 +374,6 @@ async function weclappGetById(path) {
   return response.json();
 }
 
-// Neuen Kontakt (Person) anlegen. Vorname und Nachname werden getrennt erfasst
-// (Quelle: Vectron Sales Navigator liefert sie ebenfalls getrennt) und direkt
-// in die echten firstName/lastName-Felder uebernommen. Fallback: falls aus
-// irgendeinem Grund kein Nachname vorliegt, wandert der Vorname ersatzweise
-// nach lastName, da weclapp dieses Feld zwingend nicht-leer verlangt.
 async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
   const lastNameWert = nachname || vorname || "";
   const firstNameWert = nachname ? (vorname || "") : "";
@@ -410,58 +392,116 @@ async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
   return created.id;
 }
 
-// Bestehende Firma laden, Kontakt-ID im contacts-Array ergaenzen (nicht ersetzen),
-// falls er dort noch nicht steht. Bestehende Verknuepfungen des Kontakts bleiben unberuehrt.
+const EMAIL_MUSTER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function kontaktZuFirmaHinzufuegen(firmaId, kontaktId) {
   const firma = await weclappGetById(`/party/id/${firmaId}`);
   const vorhandeneKontakte = firma.contacts || [];
   const bereitsVerknuepft = vorhandeneKontakte.some((c) => c.id === kontaktId);
 
+  // Schutz gegen leere ("") oder fehlerhaft gespeicherte E-Mail-Adressen am
+  // Datensatz: beim vollstaendigen Zurueckschreiben (PUT verlangt das komplette
+  // Objekt) wuerde weclapp einen bereits vorhandenen Wert neu validieren und
+  // ablehnen, obwohl wir ihn nie selbst gesetzt haben. Das betrifft ausdruecklich
+  // auch Kontakte/Firmen ohne hinterlegte E-Mail (dort oft "" statt komplett fehlend).
+  if (firma.email !== undefined && !EMAIL_MUSTER.test(firma.email || "")) {
+    delete firma.email;
+  }
+
   if (!bereitsVerknuepft) {
     firma.contacts = [...vorhandeneKontakte, { id: kontaktId }];
     await weclappPut(`/party/id/${firmaId}`, firma);
   }
-  return firmaId;
+  return { id: firmaId, company: firma.company, company2: firma.company2 };
 }
 
-// Neue Firma anlegen, Kontakt direkt im contacts-Array mitgeben.
 async function firmaAnlegen({ firma, betriebsart, strasse, plz, ort, kontaktId }) {
   const payload = {
     partyType: "ORGANIZATION",
     company: firma || "",
     customerBusinessType: "B2B",
+    customer: true, // noetig, damit weclapp eine Kundennummer vergibt - trotzdem
+                     // kein "richtiger" Kunde, das steuert weiterhin leadStatus
+    customerSalesChannel: "NET1", // "Standard Netto" - Pflichtfeld bei customer: true
+    leadStatus: "NEW",
     contacts: kontaktId ? [{ id: kontaktId }] : [],
     ...standardPartyFelder()
   };
 
-  if (strasse || plz || ort) {
-    payload.addresses = [
-      {
-        street1: strasse || "",
-        zipcode: plz || "",
-        city: ort || "",
-        countryCode: "DE",
-        primaryAddress: true
-      }
-    ];
-  }
+  // Adresse wird IMMER angelegt (nicht nur wenn Strasse/PLZ/Ort ausgefuellt sind),
+  // weil countryCode an der Adresse Pflichtfeld ist - ohne jede Adresse fehlt
+  // sonst das Land komplett, selbst wenn es nur "Deutschland" als Standard waere.
+  payload.addresses = [
+    {
+      street1: strasse || "",
+      zipcode: plz || "",
+      city: ort || "",
+      countryCode: "DE",
+      primaryAddress: true
+    }
+  ];
 
   const created = await weclappPost("/party", payload);
-  return created.id;
+  return { id: created.id, company: created.company, company2: created.company2 };
 }
 
-function baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon }) {
-  let teile = [];
-  if (notizen) teile.push(notizen.replace(/\n/g, "<br>"));
-  if (betriebsart) teile.push(`<br><br><b>Betriebsart:</b> ${betriebsart}`);
-  if (vkcId) teile.push(`<br><b>VKC-ID:</b> ${vkcId}`);
-  if (vkcUrl) teile.push(`<br><b>VKC-URL:</b> <a href="${vkcUrl}">${vkcUrl}</a>`);
-  if (erfasstVon) teile.push(`<br><br><i>Erfasst über Leadstart von: ${erfasstVon}</i>`);
-  return teile.join("");
+// Betriebsart, VKC-ID und VKC-URL sind eigene Zusatzfelder (siehe baueCustomAttributes)
+// und stehen daher NICHT mehr in der Beschreibung. Die Funktion bleibt bestehen,
+// falls spaeter weitere reine Freitext-Meta-Angaben dazukommen.
+function baueTicketBeschreibung() {
+  return "";
 }
 
-// Baut die customAttributes-Liste fuer VKC-ID, VKC-URL und Leadgrund.
-// Nur Felder mit tatsaechlich vorhandenem Wert werden gesetzt.
+function berlinZeitstempel() {
+  return new Date().toLocaleString("de-DE", {
+    timeZone: "Europe/Berlin",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+async function kommentarErstellen(ticketId, notizen, erfasstVon, betriebsart, bearbeiter) {
+  // comment.comment ist laut Spezifikation reiner Text (kein "format": "html" wie
+  // bei ticket.description) - HTML-Tags wuerden hier woertlich angezeigt statt
+  // interpretiert. Deshalb einfache Zeilenumbrueche statt <br>/<b>.
+  const kopf = [
+    `Absender: ${erfasstVon || "unbekannt"}`,
+    `Quelle: Leadstart-App`,
+    `Zeitstempel: ${berlinZeitstempel()} Uhr`
+  ].join("\n");
+
+  let text = kopf;
+  // Betriebsart bewusst hier im Kommentar statt als eigenes Zusatzfeld -
+  // dient spaeter als Grundlage fuer eine KI-generierte Zusammenfassung.
+  if (betriebsart) {
+    text += `\n\nBetriebsart: ${betriebsart}`;
+  }
+  // Bearbeiter-Vorschlag bewusst nur als Hinweis im Kommentar, nicht als direkt
+  // gesetztes Feld - assignedUserId beim Aktualisieren zu setzen fuehrt bei
+  // Sales-Navigator-Tickets zuverlaessig zu einem Fehler (siehe ticketAktualisieren).
+  if (bearbeiter) {
+    text += `\n\nVorschlag Zuweisung: ${bearbeiter} (bitte bei Bedarf manuell in weclapp zuweisen)`;
+  }
+  if (notizen) {
+    text += `\n\n${notizen}`;
+  }
+
+  await weclappPost("/comment", {
+    entityName: "ticket",
+    entityId: ticketId,
+    comment: text,
+    privateComment: true,
+    publicComment: false,
+    solution: false
+  });
+}
+
+// Betriebsart wird bewusst NICHT als eigenes Zusatzfeld gesetzt (siehe
+// kommentarErstellen) - landet stattdessen als Text im ersten Kommentar, da
+// eigene Betriebsart-Felder an anderer Stelle im System bereits existieren.
 function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   const attrs = [];
   if (vkcId) attrs.push({ attributeDefinitionId: ATTR_LEAD_ID, stringValue: vkcId });
@@ -475,7 +515,7 @@ function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   return attrs;
 }
 
-async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund }) {
+async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund, bearbeiter, betriebsart }) {
   const heute = Date.now();
   const payload = {
     subject: (subject || "Neuer Lead").slice(0, 150),
@@ -486,6 +526,7 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
     ticketStatusId: TICKET_STATUS_ID,
     ticketPriorityId: TICKET_PRIORITY_ID,
     ticketChannelId: TICKET_CHANNEL_ID,
+    assignedUserId: ermittleAssignedUserId(bearbeiter),
     followUpDate: heute,
     billable: false,
     disableEmailTemplates: false,
@@ -503,7 +544,74 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
   return created;
 }
 
-// Bestehendes Ticket per Ticketnummer (z.B. "tb12345") suchen.
+// Laedt alle Tickets der Leadstart-Kategorie (vollstaendig paginiert), um sie
+// clientseitig nach VKC-ID/VKC-URL in den Zusatzfeldern zu durchsuchen - es gibt
+// keinen dokumentierten Filterpfad fuer customAttributes-Werte.
+async function ticketsInLeadstartKategorieLaden() {
+  const pageSize = 200;
+  let page = 1;
+  let alle = [];
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = new URL(`${WECLAPP_BASE}/ticket`);
+    url.searchParams.set("ticketCategoryId-eq", TICKET_CATEGORY_ID);
+    url.searchParams.set("page", page);
+    url.searchParams.set("pageSize", pageSize);
+    url.searchParams.set("properties", "id,ticketNumber,subject,customAttributes");
+
+    const response = await fetch(url.toString(), {
+      headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
+    });
+    if (!response.ok) {
+      throw new Error(`weclapp-Fehler (${response.status}) beim Laden der Leadstart-Tickets, Seite ${page}`);
+    }
+    const data = await response.json();
+    const ergebnisse = data.result || [];
+    alle.push(...ergebnisse);
+
+    hasMore = ergebnisse.length === pageSize;
+    page++;
+  }
+
+  return alle;
+}
+
+// Prueft, ob zu Ticketnummer, VKC-ID oder VKC-URL bereits ein Ticket existiert.
+// Reihenfolge: zuerst Ticketnummer (direkter, schneller exakter Filter), erst
+// wenn das nichts findet und VKC-ID/VKC-URL angegeben sind, wird die Kategorie
+// vollstaendig geladen und clientseitig auf die Zusatzfelder geprueft.
+// Die Ticketnummer wird bewusst NICHT als Pruefkriterium genutzt: der Sales
+// Navigator legt sie immer schon VOR jeder Leadstart-Bearbeitung an, sie sagt
+// also nichts darueber aus, ob der Lead bereits fertig bearbeitet wurde. Nur
+// VKC-ID/VKC-URL (die erst DURCH Leadstart gesetzt werden) zeigen das zuverlaessig.
+// "gefunden" (blockierend, Formular bleibt gesperrt) gilt NUR fuer VKC-ID/VKC-URL-
+// Treffer, da nur die zuverlaessig anzeigen, dass ein Lead bereits FERTIG bearbeitet
+// wurde. Die Ticketnummer wird zusaetzlich rein informativ gesucht (falls angegeben)
+// und im Ergebnis mitgeliefert, blockiert das Formular aber ausdruecklich NICHT -
+// sie existiert ja bereits, bevor Leadstart ueberhaupt genutzt wird (Sales Navigator
+// legt sie automatisch an).
+async function leaddetailsPruefen(ticketNummer, vkcId, vkcUrl) {
+  let ticketGefunden = null;
+  if (ticketNummer) {
+    ticketGefunden = await ticketSuchenPerNummer(ticketNummer);
+  }
+
+  if (vkcId || vkcUrl) {
+    const tickets = await ticketsInLeadstartKategorieLaden();
+    for (const ticket of tickets) {
+      const attrs = ticket.customAttributes || [];
+      const hatVkcId = vkcId && attrs.some((a) => a.attributeDefinitionId === ATTR_LEAD_ID && a.stringValue === vkcId);
+      const hatVkcUrl = vkcUrl && attrs.some((a) => a.attributeDefinitionId === ATTR_LEAD_URL && a.stringValue === vkcUrl);
+      if (hatVkcId || hatVkcUrl) {
+        return { gefunden: true, gefundenUeber: hatVkcId ? "vkcId" : "vkcUrl", ticket, ticketGefunden };
+      }
+    }
+  }
+
+  return { gefunden: false, ticketGefunden };
+}
+
 async function ticketSuchenPerNummer(ticketNummer) {
   const url = new URL(`${WECLAPP_BASE}/ticket`);
   url.searchParams.set("ticketNumber-eq", ticketNummer);
@@ -518,13 +626,21 @@ async function ticketSuchenPerNummer(ticketNummer) {
   return treffer.length > 0 ? treffer[0] : null;
 }
 
-// Bestehendes Ticket aktualisieren (PUT braucht das komplette Objekt).
-// Bestehende customAttributes bleiben erhalten, unsere drei Felder werden ergaenzt/ueberschrieben.
+// WICHTIG: ticketStatusId und assignedUserId werden beim Aktualisieren bewusst
+// NICHT gesetzt. Empirisch nachgewiesen (Vergleich mit einem am 28.08. erfolgreich
+// aktualisierten Mail2Ticket-Ticket): Sobald diese beiden Felder beim PUT eines
+// bestehenden Tickets mitgeschickt werden, schlaegt der Aufruf bei Tickets aus dem
+// Sales-Navigator/Mail2Ticket-Kanal zuverlaessig fehl ("property resolvedYourIssue
+// is read-only", unabhaengig vom sonstigen Payload). Ohne diese beiden Felder
+// funktioniert derselbe Ablauf nachweislich. Die Bearbeiter-Auswahl geht dadurch
+// nicht verloren, sondern landet stattdessen als Hinweis im Kommentar.
 async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
   ticket.partyId = partyId;
   ticket.contactId = contactId;
+  // followUpDate wird beim Aktualisieren bewusst NICHT gesetzt: das verlangt
+  // zwingend Status "WAITING", den wir hier nicht erzwingen (siehe Kommentar oben).
   if (beschreibung) {
     ticket.description = (ticket.description || "") + "<br><br>" + beschreibung;
   }
@@ -543,23 +659,20 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
   return aktualisiert;
 }
 
-
-// weclapps "-like"-Operator ist case-sensitiv (empirisch bestaetigt: "müslüm ejder"
-// findet nichts, "Müslüm Ejder" findet den Kontakt). Deshalb wird jedes Wort vor der
-// Suche in die uebliche Schreibweise gebracht (erster Buchstabe gross, Rest klein),
-// unabhaengig davon, wie der Nutzer es eingetippt hat.
 function titelCase(wort) {
   if (!wort) return wort;
   return wort.charAt(0).toUpperCase() + wort.slice(1).toLowerCase();
 }
 
-// Verallgemeinerte Teilstring-Suche: zerlegt den Text in einzelne Woerter,
-// bringt jedes in die uebliche Schreibweise (Titelcase, da -like case-sensitiv
-// ist) und sucht jedes Wort per -like gegen alle angegebenen Felder. Findet so
-// auch bei kleinen Abweichungen (z.B. "Karsten" statt "Karstens") noch Treffer,
-// da nicht die komplette Phrase als ein zusammenhaengender Teilstring verlangt wird.
 async function sucheTeilstringMehrereFelder(text, felder) {
-  const tokens = (text || "").split(/\s+/).filter(Boolean).map(titelCase);
+  // Woerter mit weniger als 2 Buchstaben/Ziffern (z.B. ein einzelnes "-" oder "&")
+  // werden verworfen - die wuerden sonst als Teilstring in sehr vielen Datensaetzen
+  // vorkommen und die Suche unbrauchbar breit machen.
+  const tokens = (text || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter((wort) => wort.replace(/[^\wäöüÄÖÜß]/g, "").length >= 2)
+    .map(titelCase);
   if (tokens.length === 0) return [];
 
   const promises = [];
@@ -588,17 +701,11 @@ async function sucheNachStrasse(strasseNormalized) {
   return sucheTeilstringMehrereFelder(strasseNormalized, ["addresses.street1"]);
 }
 
-// PLZ wird exakt gesucht (keine Teilstring-Suche noetig, meist vollstaendig bekannt).
 async function sucheNachPlz(plz) {
   if (!plz) return [];
   return weclappGet({ "addresses.zipcode-eq": plz });
 }
 
-// Konfidenz fuer Firmen-Treffer nach fester Prioritaet (von sicher zu unsicher):
-// 1. Strasse + PLZ + Ort   -> hoch
-// 2. Name + PLZ            -> hoch (spezifische Kombination: konkreter Name + exakte PLZ)
-// 3. Strasse + Ort + Name  -> mittel
-// 4. Ort + Name            -> niedrig (alles Schwaechere, z.B. nur Name, ebenfalls niedrig)
 function firmaKonfidenz(matchedFields) {
   const hat = (f) => matchedFields.includes(f);
   if (hat("strasse") && hat("plz") && hat("ort")) return "hoch";
@@ -608,7 +715,6 @@ function firmaKonfidenz(matchedFields) {
   return "niedrig";
 }
 
-// Numerischer Rang je Konfidenzstufe, fuer die Sortierung (hoch zuerst).
 function konfidenzRang(konfidenz) {
   if (konfidenz === "hoch") return 3;
   if (konfidenz === "mittel") return 2;
@@ -661,6 +767,7 @@ exports.handler = async (event) => {
   const vkcUrl = body.vkcUrl || "";
   const notizen = body.notizen || "";
   const leadgrund = body.leadgrund || "";
+  const bearbeiter = body.bearbeiter || "";
   const ticketNummer = body.ticketNummer || "";
   const erfasserEmail = body.erfasserEmail || "";
   const passwort = body.passwort || "";
@@ -674,7 +781,24 @@ exports.handler = async (event) => {
     };
   }
 
-  // ---------- Action: create (Firma/Kontakt anlegen, Ticket erzeugen) ----------
+  // ---------- Action: check_leaddetails (prueft ob Lead per Ticketnummer/VKC bereits existiert) ----------
+  if (body.action === "check_leaddetails") {
+    try {
+      const ergebnis = await leaddetailsPruefen(ticketNummer, vkcId, vkcUrl);
+      return {
+        statusCode: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify(ergebnis)
+      };
+    } catch (err) {
+      return {
+        statusCode: 500,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: err.message })
+      };
+    }
+  }
+
   if (body.action === "create") {
     try {
       const kontaktAuswahl = body.kontakt || { modus: "neu" };
@@ -688,21 +812,34 @@ exports.handler = async (event) => {
         kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw });
       }
 
-      let firmaId;
-      if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
-        firmaId = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
-      } else {
-        firmaId = await firmaAnlegen({
-          firma: companyRaw,
-          betriebsart,
-          strasse,
-          plz,
-          ort,
-          kontaktId
-        });
+      // Eigener try/catch fuer den Firma-Schritt: falls dieser fehlschlaegt,
+      // NACHDEM der Kontakt bereits erfolgreich angelegt wurde, soll die
+      // Fehlermeldung das deutlich sagen - statt eines verwaisten Kontakts mit
+      // einer verwirrenden, allgemeinen Fehlermeldung ohne Kontext.
+      let firmaInfo;
+      try {
+        if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
+          firmaInfo = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
+        } else {
+          firmaInfo = await firmaAnlegen({
+            firma: companyRaw || vollerName,
+            betriebsart,
+            strasse,
+            plz,
+            ort,
+            kontaktId
+          });
+        }
+      } catch (firmaFehler) {
+        const kontaktHinweis = kontaktAuswahl.modus === "vorhanden"
+          ? `Kontakt (bestehend, ID ${kontaktId}) wurde verwendet.`
+          : `Kontakt wurde neu angelegt (ID ${kontaktId}) - dieser Kontakt existiert jetzt in weclapp, auch wenn die Firma nicht angelegt werden konnte. Beim naechsten Versuch bitte diesen Kontakt als "vorhanden" auswaehlen, um keine Dublette zu erzeugen.`;
+        throw new Error(`Firma konnte nicht angelegt/verknuepft werden: ${firmaFehler.message}. ${kontaktHinweis}`);
       }
+      const firmaId = firmaInfo.id;
+      const betreffName = firmaInfo.company || firmaInfo.company2 || vollerName || "Neuer Lead";
 
-      const beschreibung = baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon: erfasserEmail });
+      const beschreibung = baueTicketBeschreibung();
 
       let ticket;
       let aktion;
@@ -710,27 +847,56 @@ exports.handler = async (event) => {
       if (ticketNummer) {
         const gefundenesTicket = await ticketSuchenPerNummer(ticketNummer);
         if (gefundenesTicket) {
-          ticket = await ticketAktualisieren(gefundenesTicket.id, {
-            partyId: firmaId,
-            contactId: kontaktId,
-            beschreibung,
-            vkcId,
-            vkcUrl,
-            leadgrund,
-            solutionDueDate
-          });
-          aktion = "aktualisiert";
+          // Bekannter weclapp-Bug: Tickets aus dem Mail2Ticket/Sales-Navigator-Kanal
+          // lassen sich derzeit ueber die API grundsaetzlich nicht per PUT aktualisieren
+          // ("property resolvedYourIssue is read-only", unabhaengig vom Payload -
+          // manuelle Bearbeitung in der weclapp-Oberflaeche funktioniert einwandfrei).
+          // Solange das nicht von weclapp behoben ist: Kontakt/Firma wurden bereits
+          // erfolgreich verknuepft, das Ticket selbst faellt zurueck auf "manuell
+          // nachtragen", statt den kompletten Vorgang mit einer harten Fehlermeldung
+          // abzubrechen.
+          try {
+            ticket = await ticketAktualisieren(gefundenesTicket.id, {
+              partyId: firmaId,
+              contactId: kontaktId,
+              beschreibung,
+              vkcId,
+              vkcUrl,
+              leadgrund,
+              solutionDueDate
+            });
+            aktion = "aktualisiert";
+          } catch (ticketFehler) {
+            // Bekannter weclapp-Bug: Ticket kann nicht aktualisiert werden. Statt
+            // manueller Nacharbeit legen wir stattdessen ein NEUES Ticket an (das
+            // funktioniert zuverlaessig) und verweisen darin auf die urspruengliche
+            // Ticketnummer. Das alte Sales-Navigator-Ticket bleibt unveraendert bestehen.
+            ticket = await ticketAnlegen({
+              partyId: firmaId,
+              contactId: kontaktId,
+              subject: betreffName,
+              beschreibung: beschreibung + `<br><br><i>Hinweis: Ticket "${gefundenesTicket.ticketNumber}" konnte nicht automatisch aktualisiert werden - vermutlich weil es noch im Status "Noch nicht zugewiesen" ist (dieser Uebergang scheitert bei Sales-Navigator-Tickets ueber die API empirisch immer, funktioniert aber manuell in weclapp problemlos). Dieses neue Ticket wurde stattdessen angelegt. Tipp: Wird "${gefundenesTicket.ticketNumber}" zuerst manuell in weclapp einem Bearbeiter zugewiesen, sollte eine erneute Aktualisierung ueber Leadstart danach funktionieren - das urspruengliche Ticket bleibt bis dahin unveraendert bestehen.</i>`,
+              solutionDueDate,
+              vkcId,
+              vkcUrl,
+              leadgrund,
+              bearbeiter,
+              betriebsart
+            });
+            aktion = "neu_angelegt_ticket_update_fehlgeschlagen";
+          }
         } else {
-          // Ticketnummer angegeben, aber nicht gefunden -> Fallback: neu anlegen, aber deutlich kennzeichnen
           ticket = await ticketAnlegen({
             partyId: firmaId,
             contactId: kontaktId,
-            subject: companyRaw || vollerName,
+            subject: betreffName,
             beschreibung: beschreibung + `<br><br><i>Hinweis: Ticketnummer "${ticketNummer}" wurde nicht gefunden, neues Ticket wurde stattdessen angelegt.</i>`,
             solutionDueDate,
             vkcId,
             vkcUrl,
-            leadgrund
+            leadgrund,
+            bearbeiter,
+            betriebsart
           });
           aktion = "neu_angelegt_ticketnummer_nicht_gefunden";
         }
@@ -738,15 +904,19 @@ exports.handler = async (event) => {
         ticket = await ticketAnlegen({
           partyId: firmaId,
           contactId: kontaktId,
-          subject: companyRaw || vollerName,
+          subject: betreffName,
           beschreibung,
           solutionDueDate,
           vkcId,
           vkcUrl,
-          leadgrund
+          leadgrund,
+          bearbeiter,
+          betriebsart
         });
         aktion = "neu_angelegt";
       }
+
+      await kommentarErstellen(ticket.id, notizen, erfasserEmail, betriebsart, bearbeiter);
 
       return {
         statusCode: 200,
@@ -757,6 +927,7 @@ exports.handler = async (event) => {
           kontaktId,
           firmaId,
           ticketId: ticket.id,
+          ticketNummer: ticket.ticketNumber,
           ticketSubject: ticket.subject
         })
       };
@@ -769,14 +940,12 @@ exports.handler = async (event) => {
     }
   }
 
-  // ---------- Action: check (Standardverhalten, bisherige Logik) ----------
   const nameNormalized = normalizeName(vollerName);
   const emailNormalized = normalizeEmail(emailRaw);
   const phoneNormalized = normalizePhone(phoneRaw);
   const companyNormalized = normalizeCompanyName(companyRaw);
 
   try {
-    // Alle Suchen parallel starten
     const [
       emailResults,
       mobilePhone1Results,
