@@ -19,6 +19,19 @@ const TICKET_CATEGORY_ID = "242030";   // Office (unter Team POS)
 const TICKET_STATUS_ID = "1936022";    // Beratung & FollowUp
 const TICKET_PRIORITY_ID = "3660";     // normal
 const TICKET_CHANNEL_ID = "2539303";   // Vectron Sales
+const DEFAULT_ASSIGNED_USER_ID = "17430"; // Karsten Brauer - Fallback, falls kein Bearbeiter ausgewaehlt wurde
+
+// Zuordnung Anmelde-E-Mail -> weclapp-User-ID, fuer die manuelle Bearbeiter-Zuweisung im Formular.
+const BEARBEITER_USER_IDS = {
+  "karsten.brauer@kasse-stimmt.de": "17430",
+  "judith.thiede@kasse-stimmt.de": "17437",
+  "katja.malyshkina@kasse-stimmt.de": "1057232"
+};
+
+function ermittleAssignedUserId(bearbeiterEmail) {
+  const normalisiert = (bearbeiterEmail || "").trim().toLowerCase();
+  return BEARBEITER_USER_IDS[normalisiert] || DEFAULT_ASSIGNED_USER_ID;
+}
 
 // Custom-Attribute-IDs am Ticket (Gruppe "POS & Pay")
 const ATTR_LEAD_ID = "2541107";
@@ -469,7 +482,7 @@ function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   return attrs;
 }
 
-async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund }) {
+async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund, bearbeiter }) {
   const heute = Date.now();
   const payload = {
     subject: (subject || "Neuer Lead").slice(0, 150),
@@ -480,6 +493,7 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
     ticketStatusId: TICKET_STATUS_ID,
     ticketPriorityId: TICKET_PRIORITY_ID,
     ticketChannelId: TICKET_CHANNEL_ID,
+    assignedUserId: ermittleAssignedUserId(bearbeiter),
     followUpDate: heute,
     billable: false,
     disableEmailTemplates: false,
@@ -571,12 +585,13 @@ async function ticketSuchenPerNummer(ticketNummer) {
   return treffer.length > 0 ? treffer[0] : null;
 }
 
-async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate }) {
+async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
   ticket.partyId = partyId;
   ticket.contactId = contactId;
   ticket.followUpDate = Date.now();
+  ticket.assignedUserId = ermittleAssignedUserId(bearbeiter);
   if (beschreibung) {
     ticket.description = (ticket.description || "") + "<br><br>" + beschreibung;
   }
@@ -703,6 +718,7 @@ exports.handler = async (event) => {
   const vkcUrl = body.vkcUrl || "";
   const notizen = body.notizen || "";
   const leadgrund = body.leadgrund || "";
+  const bearbeiter = body.bearbeiter || "";
   const ticketNummer = body.ticketNummer || "";
   const erfasserEmail = body.erfasserEmail || "";
   const passwort = body.passwort || "";
@@ -778,7 +794,8 @@ exports.handler = async (event) => {
             vkcId,
             vkcUrl,
             leadgrund,
-            solutionDueDate
+            solutionDueDate,
+            bearbeiter
           });
           aktion = "aktualisiert";
         } else {
@@ -790,7 +807,8 @@ exports.handler = async (event) => {
             solutionDueDate,
             vkcId,
             vkcUrl,
-            leadgrund
+            leadgrund,
+            bearbeiter
           });
           aktion = "neu_angelegt_ticketnummer_nicht_gefunden";
         }
@@ -803,7 +821,8 @@ exports.handler = async (event) => {
           solutionDueDate,
           vkcId,
           vkcUrl,
-          leadgrund
+          leadgrund,
+          bearbeiter
         });
         aktion = "neu_angelegt";
       }
