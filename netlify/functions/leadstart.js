@@ -611,6 +611,29 @@ async function ticketSuchenPerNummer(ticketNummer) {
 async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter, betriebsart }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
+  // Schreibgeschuetzte Felder entfernen, bevor das komplette Objekt per PUT
+  // zurueckgeschickt wird. "ccEmailAddresses" ist in der Spezifikation NICHT als
+  // schreibgeschuetzt markiert, wird zur Laufzeit aber trotzdem abgelehnt
+  // ("property ccEmailAddresses cannot be updated") - dasselbe Muster wie beim
+  // "competitor"-Feld bei party. Die uebrigen Felder sind laut Spezifikation
+  // offiziell readOnly und werden vorsorglich ebenfalls entfernt.
+  const NICHT_ZURUECKSCHREIBEN = [
+    "ccEmailAddresses",
+    "billableStatus",
+    "finishedDate",
+    "invoicingStatus",
+    "performanceRecordedStatus",
+    "publicPageExpirationDate",
+    "publicPageUuid",
+    "resolvedYourIssue",
+    "salesOrderId",
+    "ticketRatingComment",
+    "ticketRatingDate"
+  ];
+  for (const feld of NICHT_ZURUECKSCHREIBEN) {
+    delete ticket[feld];
+  }
+
   // Der Status muss ZWINGEND vor/gleichzeitig mit assignedUserId und followUpDate
   // gesetzt werden: weclapp verlangt bei internem Status "UNASSIGNED" (z.B. bei
   // frisch vom Sales Navigator erzeugten Tickets) assignedUserId=null und verbietet
