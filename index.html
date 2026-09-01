@@ -269,6 +269,10 @@
       <div class="loading-inline" id="loadingLeaddetails"><span class="spinner"></span>Wird geprüft …</div>
       <div id="leaddetailsBlockErgebnis"></div>
 
+      <!-- Rest des Formulars bleibt versteckt, bis die Leaddetails-Pruefung
+           bestaetigt hat, dass kein bestehender Lead gefunden wurde. -->
+      <div id="restFormular" style="display:none;">
+
       <!-- Block: Kontakt -->
       <div class="block-heading">Kontakt</div>
 
@@ -349,6 +353,8 @@
         <button type="button" id="ticketAnlegenBtn">Ticket aktualisieren/erzeugen</button>
         <div id="ticketErgebnis" style="margin-top:12px;"></div>
       </div>
+
+      </div><!-- Ende restFormular -->
 
     </form>
   </div>
@@ -551,23 +557,29 @@
       }
 
       const ergebnis = await response.json();
+      const restFormular = document.getElementById("restFormular");
 
       if (ergebnis.gefunden) {
+        restFormular.style.display = "none";
+
         const quelleText = {
           ticketNummer: "der Ticketnummer",
           vkcId: "der VKC-ID",
           vkcUrl: "der VKC-URL"
         }[ergebnis.gefundenUeber] || "";
+        const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticket.id}`;
 
         zielDiv.innerHTML = `<div class="block warn">
           <div class="block-title">⚠️ Lead bereits vorhanden</div>
           Gefunden über ${quelleText}.<br>
           Ticketnummer: ${ergebnis.ticket.ticketNumber || "–"}<br>
-          Betreff: ${ergebnis.ticket.subject || "–"}<br><br>
+          Betreff: ${ergebnis.ticket.subject || "–"}<br>
+          <a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br><br>
           <em>Dieser Lead ist bereits erfasst und kann nur noch direkt in weclapp weiterbearbeitet werden.</em>
         </div>
         <button type="button" id="angebotskonfiguratorBtn" class="secondary" disabled>Angebotskonfigurator starten (folgt)</button>`;
       } else {
+        restFormular.style.display = "block";
         zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
       }
     } catch (err) {
