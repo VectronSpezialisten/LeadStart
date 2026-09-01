@@ -284,6 +284,7 @@
 
       <label for="email">E-Mail</label>
       <input type="email" id="email" name="email" placeholder="name@beispiel.de">
+      <div class="feld-fehler" id="emailFehler">Bitte eine vollständige E-Mail-Adresse eingeben (z.B. name@beispiel.de).</div>
 
       <label for="telefon">Telefon</label>
       <input type="tel" id="telefon" name="telefon" placeholder="+49...">
@@ -458,6 +459,26 @@
   });
   telefonInput.addEventListener("blur", pruefeTelefonAnzeige);
 
+  // E-Mail waehrend der Eingabe pruefen: einfache, aber ausreichende Format-Kontrolle
+  const emailInput = document.getElementById("email");
+  const emailFehlerEl = document.getElementById("emailFehler");
+  const EMAIL_MUSTER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function emailGueltig() {
+    const wert = emailInput.value.trim();
+    return wert === "" || EMAIL_MUSTER.test(wert);
+  }
+
+  function pruefeEmailAnzeige() {
+    const gueltig = emailGueltig();
+    emailInput.classList.toggle("ungueltig", !gueltig);
+    emailFehlerEl.style.display = gueltig ? "none" : "block";
+    return gueltig;
+  }
+
+  emailInput.addEventListener("input", pruefeEmailAnzeige);
+  emailInput.addEventListener("blur", pruefeEmailAnzeige);
+
   const confidenceLabel = (c) => {
     if (c === "hoch") return "sehr sicher";
     if (c === "mittel") return "möglich";
@@ -603,6 +624,10 @@
   document.getElementById("pruefungKontaktBtn").addEventListener("click", async () => {
     if (!pruefeTelefonAnzeige()) {
       telefonInput.focus();
+      return;
+    }
+    if (!pruefeEmailAnzeige()) {
+      emailInput.focus();
       return;
     }
 
@@ -845,6 +870,10 @@
       telefonInput.focus();
       return;
     }
+    if (!pruefeEmailAnzeige()) {
+      emailInput.focus();
+      return;
+    }
 
     const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
     const zugang = getZugang();
@@ -886,7 +915,8 @@
         : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
         ? "Ticketnummer nicht gefunden — neues Ticket wurde stattdessen angelegt"
         : "Neues Ticket wurde angelegt";
-      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticket-ID: ${ergebnis.ticketId}<br>Betreff: ${ergebnis.ticketSubject}</div>`;
+      const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketId}`;
+      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticketnummer: ${ergebnis.ticketNummer || "–"}<br><a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br>Betreff: ${ergebnis.ticketSubject}</div>`;
     } catch (err) {
       ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
     }
