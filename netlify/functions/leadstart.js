@@ -421,7 +421,7 @@ async function kontaktZuFirmaHinzufuegen(firmaId, kontaktId) {
     firma.contacts = [...vorhandeneKontakte, { id: kontaktId }];
     await weclappPut(`/party/id/${firmaId}`, firma);
   }
-  return { id: firmaId, company: firma.company, company2: firma.company2 };
+  return firmaId;
 }
 
 // Neue Firma anlegen, Kontakt direkt im contacts-Array mitgeben.
@@ -450,54 +450,14 @@ async function firmaAnlegen({ firma, betriebsart, strasse, plz, ort, kontaktId }
   return created.id;
 }
 
-// Notizen werden NICHT mehr in die Ticket-Beschreibung geschrieben, sondern
-// separat als Kommentar (siehe kommentarErstellen). Die Beschreibung enthaelt
-// nur noch die strukturierten Meta-Angaben.
-function baueTicketBeschreibung({ betriebsart, vkcId, vkcUrl }) {
+function baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon }) {
   let teile = [];
-  if (betriebsart) teile.push(`<b>Betriebsart:</b> ${betriebsart}`);
-  if (vkcId) teile.push(`<b>VKC-ID:</b> ${vkcId}`);
-  if (vkcUrl) teile.push(`<b>VKC-URL:</b> <a href="${vkcUrl}">${vkcUrl}</a>`);
-  return teile.join("<br>");
-}
-
-// Zeitstempel in Berlin-Zeit, unabhaengig davon, wo der Netlify-Server selbst steht.
-function berlinZeitstempel() {
-  return new Date().toLocaleString("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
-// Erstellt einen Kommentar am Ticket mit strukturiertem Kopf (Absender, Quelle,
-// Zeitstempel) und dem Notiz-Text. Der Verfasser wird von weclapp technisch
-// immer auf den Besitzer des verwendeten API-Tokens gesetzt (authorName wird
-// ignoriert - empirisch bestaetigt) - deshalb steht die tatsaechliche
-// Erfasser-Mailadresse zusaetzlich lesbar im Kopf des Kommentartexts.
-async function kommentarErstellen(ticketId, notizen, erfasstVon) {
-  const kopf = [
-    `<b>Absender:</b> ${erfasstVon || "unbekannt"}`,
-    `<b>Quelle:</b> Leadstart-App`,
-    `<b>Zeitstempel:</b> ${berlinZeitstempel()} Uhr`
-  ].join("<br>");
-
-  let text = kopf;
-  if (notizen) {
-    text += `<br><br>${notizen.replace(/\n/g, "<br>")}`;
-  }
-
-  await weclappPost("/comment", {
-    entityName: "ticket",
-    entityId: ticketId,
-    comment: text,
-    privateComment: true,
-    publicComment: false,
-    solution: false
-  });
+  if (notizen) teile.push(notizen.replace(/\n/g, "<br>"));
+  if (betriebsart) teile.push(`<br><br><b>Betriebsart:</b> ${betriebsart}`);
+  if (vkcId) teile.push(`<br><b>VKC-ID:</b> ${vkcId}`);
+  if (vkcUrl) teile.push(`<br><b>VKC-URL:</b> <a href="${vkcUrl}">${vkcUrl}</a>`);
+  if (erfasstVon) teile.push(`<br><br><i>Erfasst über Leadstart von: ${erfasstVon}</i>`);
+  return teile.join("");
 }
 
 // Baut die customAttributes-Liste fuer VKC-ID, VKC-URL und Leadgrund.
@@ -565,7 +525,6 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
 
   ticket.partyId = partyId;
   ticket.contactId = contactId;
-  ticket.followUpDate = Date.now();
   if (beschreibung) {
     ticket.description = (ticket.description || "") + "<br><br>" + beschreibung;
   }
@@ -729,11 +688,11 @@ exports.handler = async (event) => {
         kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw });
       }
 
-      let firmaInfo;
+      let firmaId;
       if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
-        firmaInfo = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
+        firmaId = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
       } else {
-        firmaInfo = await firmaAnlegen({
+        firmaId = await firmaAnlegen({
           firma: companyRaw,
           betriebsart,
           strasse,
@@ -742,12 +701,8 @@ exports.handler = async (event) => {
           kontaktId
         });
       }
-      const firmaId = firmaInfo.id;
-      // Ticket-Betreff: tatsaechlicher (ggf. bestehender) Firmenname, nicht die rohe Eingabe -
-      // damit z.B. bei Auswahl einer bestehenden Firma deren echter Name im Betreff steht.
-      const betreffName = firmaInfo.company || firmaInfo.company2 || vollerName || "Neuer Lead";
 
-      const beschreibung = baueTicketBeschreibung({ betriebsart, vkcId, vkcUrl });
+      const beschreibung = baueTicketBeschreibung({ notizen, betriebsart, vkcId, vkcUrl, erfasstVon: erfasserEmail });
 
       let ticket;
       let aktion;
@@ -770,7 +725,7 @@ exports.handler = async (event) => {
           ticket = await ticketAnlegen({
             partyId: firmaId,
             contactId: kontaktId,
-            subject: betreffName,
+            subject: companyRaw || vollerName,
             beschreibung: beschreibung + `<br><br><i>Hinweis: Ticketnummer "${ticketNummer}" wurde nicht gefunden, neues Ticket wurde stattdessen angelegt.</i>`,
             solutionDueDate,
             vkcId,
@@ -783,7 +738,7 @@ exports.handler = async (event) => {
         ticket = await ticketAnlegen({
           partyId: firmaId,
           contactId: kontaktId,
-          subject: betreffName,
+          subject: companyRaw || vollerName,
           beschreibung,
           solutionDueDate,
           vkcId,
@@ -792,9 +747,6 @@ exports.handler = async (event) => {
         });
         aktion = "neu_angelegt";
       }
-
-      // Notizen als eigenen Kommentar am Ticket hinterlegen (nicht mehr Teil der Beschreibung).
-      await kommentarErstellen(ticket.id, notizen, erfasserEmail);
 
       return {
         statusCode: 200,
