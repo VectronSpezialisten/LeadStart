@@ -371,6 +371,7 @@
 
 <script>
   const FUNCTION_URL = "/.netlify/functions/leadstart";
+  const KONFIGURATOR_URL = "https://leadangebot.netlify.app"; // Angebotskonfigurator - eigenstaendiges Modul
   const STORAGE_KEY = "leadstart_zugang";
 
   const loginBox = document.getElementById("loginBox");
@@ -925,6 +926,7 @@
 
       const ergebnis = await response.json();
       const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketId}`;
+      const konfiguratorLink = `${KONFIGURATOR_URL}/?partyId=${encodeURIComponent(ergebnis.firmaId)}&email=${encodeURIComponent(zugang.email)}&pw=${encodeURIComponent(zugang.passwort)}`;
       const aktionText = ergebnis.aktion === "aktualisiert"
         ? "Bestehendes Ticket wurde aktualisiert"
         : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
@@ -932,7 +934,8 @@
         : ergebnis.aktion === "neu_angelegt_ticket_update_fehlgeschlagen"
         ? "Ursprüngliches Ticket konnte nicht aktualisiert werden (bekannter weclapp-Fehler) — neues Ticket wurde stattdessen angelegt"
         : "Neues Ticket wurde angelegt";
-      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticketnummer: ${ergebnis.ticketNummer || "–"}<br><a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br>Betreff: ${ergebnis.ticketSubject}</div>`;
+      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticketnummer: ${ergebnis.ticketNummer || "–"}<br><a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br>Betreff: ${ergebnis.ticketSubject}</div>
+        <a href="${konfiguratorLink}" target="_blank" rel="noopener"><button type="button">Angebot erstellen</button></a>`;
     } catch (err) {
       ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
     }
