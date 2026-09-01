@@ -578,7 +578,18 @@ async function ticketsInLeadstartKategorieLaden() {
 // Navigator legt sie immer schon VOR jeder Leadstart-Bearbeitung an, sie sagt
 // also nichts darueber aus, ob der Lead bereits fertig bearbeitet wurde. Nur
 // VKC-ID/VKC-URL (die erst DURCH Leadstart gesetzt werden) zeigen das zuverlaessig.
-async function leaddetailsPruefen(vkcId, vkcUrl) {
+// "gefunden" (blockierend, Formular bleibt gesperrt) gilt NUR fuer VKC-ID/VKC-URL-
+// Treffer, da nur die zuverlaessig anzeigen, dass ein Lead bereits FERTIG bearbeitet
+// wurde. Die Ticketnummer wird zusaetzlich rein informativ gesucht (falls angegeben)
+// und im Ergebnis mitgeliefert, blockiert das Formular aber ausdruecklich NICHT -
+// sie existiert ja bereits, bevor Leadstart ueberhaupt genutzt wird (Sales Navigator
+// legt sie automatisch an).
+async function leaddetailsPruefen(ticketNummer, vkcId, vkcUrl) {
+  let ticketGefunden = null;
+  if (ticketNummer) {
+    ticketGefunden = await ticketSuchenPerNummer(ticketNummer);
+  }
+
   if (vkcId || vkcUrl) {
     const tickets = await ticketsInLeadstartKategorieLaden();
     for (const ticket of tickets) {
@@ -586,12 +597,12 @@ async function leaddetailsPruefen(vkcId, vkcUrl) {
       const hatVkcId = vkcId && attrs.some((a) => a.attributeDefinitionId === ATTR_LEAD_ID && a.stringValue === vkcId);
       const hatVkcUrl = vkcUrl && attrs.some((a) => a.attributeDefinitionId === ATTR_LEAD_URL && a.stringValue === vkcUrl);
       if (hatVkcId || hatVkcUrl) {
-        return { gefunden: true, gefundenUeber: hatVkcId ? "vkcId" : "vkcUrl", ticket };
+        return { gefunden: true, gefundenUeber: hatVkcId ? "vkcId" : "vkcUrl", ticket, ticketGefunden };
       }
     }
   }
 
-  return { gefunden: false };
+  return { gefunden: false, ticketGefunden };
 }
 
 async function ticketSuchenPerNummer(ticketNummer) {
@@ -787,7 +798,7 @@ exports.handler = async (event) => {
   // ---------- Action: check_leaddetails (prueft ob Lead per Ticketnummer/VKC bereits existiert) ----------
   if (body.action === "check_leaddetails") {
     try {
-      const ergebnis = await leaddetailsPruefen(vkcId, vkcUrl);
+      const ergebnis = await leaddetailsPruefen(ticketNummer, vkcId, vkcUrl);
       return {
         statusCode: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
