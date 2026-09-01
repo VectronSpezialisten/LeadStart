@@ -867,6 +867,7 @@ exports.handler = async (event) => {
           kontaktId,
           firmaId,
           ticketId: ticket.id,
+          ticketNummer: ticket.ticketNumber,
           ticketSubject: ticket.subject
         })
       };
