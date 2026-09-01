@@ -237,6 +237,7 @@ function auswertenFirma(sources, benoetigteFelder = []) {
       id: party.id,
       company: party.company,
       company2: party.company2,
+      kundennummer: party.customerNumber || "",
       strasse: adresse.street1 || "",
       plz: adresse.zipcode || "",
       ort: adresse.city || "",
