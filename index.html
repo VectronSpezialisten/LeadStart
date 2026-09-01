@@ -97,6 +97,16 @@
     outline: none;
     border-color: var(--gray-700);
   }
+  input.ungueltig {
+    border-color: var(--red);
+    background: var(--red-bg);
+  }
+  .feld-fehler {
+    display: none;
+    color: var(--red);
+    font-size: 12px;
+    margin-top: 4px;
+  }
   button {
     width: 100%;
     margin-top: 18px;
@@ -255,6 +265,10 @@
       <label for="vkcUrl">VKC-URL</label>
       <input type="url" id="vkcUrl" name="vkcUrl" placeholder="Link zur Verkaufschance im Sales Navigator">
 
+      <button type="button" id="pruefungLeaddetailsBtn" class="secondary">Prüfung Leaddetails</button>
+      <div class="loading-inline" id="loadingLeaddetails"><span class="spinner"></span>Wird geprüft …</div>
+      <div id="leaddetailsBlockErgebnis"></div>
+
       <!-- Block: Kontakt -->
       <div class="block-heading">Kontakt</div>
 
@@ -269,6 +283,7 @@
 
       <label for="telefon">Telefon</label>
       <input type="tel" id="telefon" name="telefon" placeholder="+49...">
+      <div class="feld-fehler" id="telefonFehler">Bitte mit Ländervorwahl eingeben (z.B. +49...).</div>
 
       <button type="button" id="pruefungKontaktBtn" class="secondary">Prüfung Kontakt</button>
       <div class="loading-inline" id="loadingKontakt"><span class="spinner"></span>Wird geprüft …</div>
@@ -406,12 +421,28 @@
 
   // Telefonnummer waehrend der Eingabe automatisch bereinigen: nur '+' und Ziffern erlaubt
   const telefonInput = document.getElementById("telefon");
+  const telefonFehlerEl = document.getElementById("telefonFehler");
+
+  function telefonGueltig() {
+    const wert = telefonInput.value.trim();
+    return wert === "" || wert.startsWith("+");
+  }
+
+  function pruefeTelefonAnzeige() {
+    const gueltig = telefonGueltig();
+    telefonInput.classList.toggle("ungueltig", !gueltig);
+    telefonFehlerEl.style.display = gueltig ? "none" : "block";
+    return gueltig;
+  }
+
   telefonInput.addEventListener("input", () => {
     let wert = telefonInput.value;
     let bereinigt = wert.replace(/[^\d+]/g, "");
     bereinigt = bereinigt.replace(/(?!^)\+/g, "");
     telefonInput.value = bereinigt;
+    pruefeTelefonAnzeige();
   });
+  telefonInput.addEventListener("blur", pruefeTelefonAnzeige);
 
   const confidenceLabel = (c) => {
     if (c === "hoch") return "sehr sicher";
@@ -476,8 +507,84 @@
   let letztesKontaktErgebnis = null;
   let letztesFirmaErgebnis = null;
 
+  // ---------- Pruefung Leaddetails ----------
+  document.getElementById("pruefungLeaddetailsBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("pruefungLeaddetailsBtn");
+    const loading = document.getElementById("loadingLeaddetails");
+    const zielDiv = document.getElementById("leaddetailsBlockErgebnis");
+    const zugang = getZugang();
+    if (!zugang) {
+      zeigeLogin();
+      return;
+    }
+
+    btn.disabled = true;
+    loading.style.display = "block";
+    zielDiv.innerHTML = "";
+
+    try {
+      const payload = {
+        action: "check_leaddetails",
+        ticketNummer: document.getElementById("ticketNummer").value.trim(),
+        vkcId: document.getElementById("vkcId").value.trim(),
+        vkcUrl: document.getElementById("vkcUrl").value.trim(),
+        erfasserEmail: zugang.email,
+        passwort: zugang.passwort
+      };
+
+      const response = await fetch(FUNCTION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 401) {
+        clearZugang();
+        loginError.textContent = "Anmeldung ungültig. Bitte erneut anmelden.";
+        loginError.style.display = "block";
+        zeigeLogin();
+        return;
+      }
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Serverfehler ${response.status}`);
+      }
+
+      const ergebnis = await response.json();
+
+      if (ergebnis.gefunden) {
+        const quelleText = {
+          ticketNummer: "der Ticketnummer",
+          vkcId: "der VKC-ID",
+          vkcUrl: "der VKC-URL"
+        }[ergebnis.gefundenUeber] || "";
+
+        zielDiv.innerHTML = `<div class="block warn">
+          <div class="block-title">⚠️ Lead bereits vorhanden</div>
+          Gefunden über ${quelleText}.<br>
+          Ticketnummer: ${ergebnis.ticket.ticketNumber || "–"}<br>
+          Betreff: ${ergebnis.ticket.subject || "–"}<br><br>
+          <em>Dieser Lead ist bereits erfasst und kann nur noch direkt in weclapp weiterbearbeitet werden.</em>
+        </div>
+        <button type="button" id="angebotskonfiguratorBtn" class="secondary" disabled>Angebotskonfigurator starten (folgt)</button>`;
+      } else {
+        zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
+      }
+    } catch (err) {
+      zielDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>${err.message}</div>`;
+    } finally {
+      loading.style.display = "none";
+      btn.disabled = false;
+    }
+  });
+
   // ---------- Pruefung Kontakt ----------
   document.getElementById("pruefungKontaktBtn").addEventListener("click", async () => {
+    if (!pruefeTelefonAnzeige()) {
+      telefonInput.focus();
+      return;
+    }
+
     const btn = document.getElementById("pruefungKontaktBtn");
     const loading = document.getElementById("loadingKontakt");
     const zielDiv = document.getElementById("kontaktBlockErgebnis");
@@ -676,7 +783,6 @@
     if (daten.vkcId) zeilen.push(`VKC-ID: ${daten.vkcId}`);
     if (daten.vkcUrl) zeilen.push(`VKC-URL: ${daten.vkcUrl}`);
     if (daten.leadgrund) zeilen.push(`Leadgrund: ${daten.leadgrund}`);
-    if (daten.ticketNummer) zeilen.push(`Ticketnummer: ${daten.ticketNummer}`);
     if (daten.notizen) {
       zeilen.push("");
       zeilen.push("Notizen:");
@@ -714,6 +820,11 @@
 
   // ---------- Ticket erzeugen/aktualisieren ----------
   document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
+    if (!pruefeTelefonAnzeige()) {
+      telefonInput.focus();
+      return;
+    }
+
     const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
     const zugang = getZugang();
     if (!zugang) {
