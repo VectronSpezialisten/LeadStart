@@ -97,16 +97,6 @@
     outline: none;
     border-color: var(--gray-700);
   }
-  input.ungueltig {
-    border-color: var(--red);
-    background: var(--red-bg);
-  }
-  .feld-fehler {
-    display: none;
-    color: var(--red);
-    font-size: 12px;
-    margin-top: 4px;
-  }
   button {
     width: 100%;
     margin-top: 18px;
@@ -265,30 +255,17 @@
       <label for="vkcUrl">VKC-URL</label>
       <input type="url" id="vkcUrl" name="vkcUrl" placeholder="Link zur Verkaufschance im Sales Navigator">
 
-      <button type="button" id="pruefungLeaddetailsBtn" class="secondary">Prüfung Leaddetails</button>
-      <div class="loading-inline" id="loadingLeaddetails"><span class="spinner"></span>Wird geprüft …</div>
-      <div id="leaddetailsBlockErgebnis"></div>
-
-      <!-- Rest des Formulars bleibt versteckt, bis die Leaddetails-Pruefung
-           bestaetigt hat, dass kein bestehender Lead gefunden wurde. -->
-      <div id="restFormular" style="display:none;">
-
       <!-- Block: Kontakt -->
       <div class="block-heading">Kontakt</div>
 
-      <label class="first-in-block" for="vorname">Vorname</label>
-      <input type="text" id="vorname" name="vorname" placeholder="z.B. Karsten">
-
-      <label for="nachname">Nachname</label>
-      <input type="text" id="nachname" name="nachname" required placeholder="z.B. Brauer">
+      <label class="first-in-block" for="name">Name</label>
+      <input type="text" id="name" name="name" required placeholder="Vor- und Nachname">
 
       <label for="email">E-Mail</label>
       <input type="email" id="email" name="email" placeholder="name@beispiel.de">
-      <div class="feld-fehler" id="emailFehler">Bitte eine vollständige E-Mail-Adresse eingeben (z.B. name@beispiel.de).</div>
 
       <label for="telefon">Telefon</label>
       <input type="tel" id="telefon" name="telefon" placeholder="+49...">
-      <div class="feld-fehler" id="telefonFehler">Bitte mit Ländervorwahl eingeben (z.B. +49...).</div>
 
       <button type="button" id="pruefungKontaktBtn" class="secondary">Prüfung Kontakt</button>
       <div class="loading-inline" id="loadingKontakt"><span class="spinner"></span>Wird geprüft …</div>
@@ -332,14 +309,6 @@
       <label class="first-in-block" for="notizen">Notizen</label>
       <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
 
-      <label for="bearbeiter">Zuweisen an</label>
-      <select id="bearbeiter" name="bearbeiter">
-        <option value="">Bitte wählen …</option>
-        <option value="karsten.brauer@kasse-stimmt.de">Karsten</option>
-        <option value="judith.thiede@kasse-stimmt.de">Judith</option>
-        <option value="katja.malyshkina@kasse-stimmt.de">Katja</option>
-      </select>
-
       <label for="leadgrund">Leadgrund</label>
       <select id="leadgrund" name="leadgrund">
         <option value="">Bitte wählen …</option>
@@ -362,8 +331,6 @@
         <button type="button" id="ticketAnlegenBtn">Ticket aktualisieren/erzeugen</button>
         <div id="ticketErgebnis" style="margin-top:12px;"></div>
       </div>
-
-      </div><!-- Ende restFormular -->
 
     </form>
   </div>
@@ -436,48 +403,12 @@
 
   // Telefonnummer waehrend der Eingabe automatisch bereinigen: nur '+' und Ziffern erlaubt
   const telefonInput = document.getElementById("telefon");
-  const telefonFehlerEl = document.getElementById("telefonFehler");
-
-  function telefonGueltig() {
-    const wert = telefonInput.value.trim();
-    return wert === "" || wert.startsWith("+");
-  }
-
-  function pruefeTelefonAnzeige() {
-    const gueltig = telefonGueltig();
-    telefonInput.classList.toggle("ungueltig", !gueltig);
-    telefonFehlerEl.style.display = gueltig ? "none" : "block";
-    return gueltig;
-  }
-
   telefonInput.addEventListener("input", () => {
     let wert = telefonInput.value;
     let bereinigt = wert.replace(/[^\d+]/g, "");
     bereinigt = bereinigt.replace(/(?!^)\+/g, "");
     telefonInput.value = bereinigt;
-    pruefeTelefonAnzeige();
   });
-  telefonInput.addEventListener("blur", pruefeTelefonAnzeige);
-
-  // E-Mail waehrend der Eingabe pruefen: einfache, aber ausreichende Format-Kontrolle
-  const emailInput = document.getElementById("email");
-  const emailFehlerEl = document.getElementById("emailFehler");
-  const EMAIL_MUSTER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  function emailGueltig() {
-    const wert = emailInput.value.trim();
-    return wert === "" || EMAIL_MUSTER.test(wert);
-  }
-
-  function pruefeEmailAnzeige() {
-    const gueltig = emailGueltig();
-    emailInput.classList.toggle("ungueltig", !gueltig);
-    emailFehlerEl.style.display = gueltig ? "none" : "block";
-    return gueltig;
-  }
-
-  emailInput.addEventListener("input", pruefeEmailAnzeige);
-  emailInput.addEventListener("blur", pruefeEmailAnzeige);
 
   const confidenceLabel = (c) => {
     if (c === "hoch") return "sehr sicher";
@@ -487,8 +418,7 @@
 
   function sammleFormularDaten() {
     return {
-      vorname: document.getElementById("vorname").value.trim(),
-      nachname: document.getElementById("nachname").value.trim(),
+      name: document.getElementById("name").value.trim(),
       telefon: document.getElementById("telefon").value.trim(),
       email: document.getElementById("email").value.trim(),
       firma: document.getElementById("firma").value.trim(),
@@ -499,7 +429,6 @@
       vkcId: document.getElementById("vkcId").value.trim(),
       vkcUrl: document.getElementById("vkcUrl").value.trim(),
       notizen: document.getElementById("notizen").value.trim(),
-      bearbeiter: document.getElementById("bearbeiter").value,
       leadgrund: document.getElementById("leadgrund").value,
       ticketNummer: document.getElementById("ticketNummer").value.trim()
     };
@@ -543,105 +472,8 @@
   let letztesKontaktErgebnis = null;
   let letztesFirmaErgebnis = null;
 
-  // ---------- Pruefung Leaddetails ----------
-  document.getElementById("pruefungLeaddetailsBtn").addEventListener("click", async () => {
-    const btn = document.getElementById("pruefungLeaddetailsBtn");
-    const loading = document.getElementById("loadingLeaddetails");
-    const zielDiv = document.getElementById("leaddetailsBlockErgebnis");
-    const zugang = getZugang();
-    if (!zugang) {
-      zeigeLogin();
-      return;
-    }
-
-    btn.disabled = true;
-    loading.style.display = "block";
-    zielDiv.innerHTML = "";
-
-    try {
-      const payload = {
-        action: "check_leaddetails",
-        ticketNummer: document.getElementById("ticketNummer").value.trim(),
-        vkcId: document.getElementById("vkcId").value.trim(),
-        vkcUrl: document.getElementById("vkcUrl").value.trim(),
-        erfasserEmail: zugang.email,
-        passwort: zugang.passwort
-      };
-
-      const response = await fetch(FUNCTION_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.status === 401) {
-        clearZugang();
-        loginError.textContent = "Anmeldung ungültig. Bitte erneut anmelden.";
-        loginError.style.display = "block";
-        zeigeLogin();
-        return;
-      }
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.error || `Serverfehler ${response.status}`);
-      }
-
-      const ergebnis = await response.json();
-      const restFormular = document.getElementById("restFormular");
-
-      if (ergebnis.gefunden) {
-        restFormular.style.display = "none";
-
-        const quelleText = {
-          ticketNummer: "der Ticketnummer",
-          vkcId: "der VKC-ID",
-          vkcUrl: "der VKC-URL"
-        }[ergebnis.gefundenUeber] || "";
-        const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticket.id}`;
-
-        zielDiv.innerHTML = `<div class="block warn">
-          <div class="block-title">⚠️ Lead bereits vorhanden</div>
-          Gefunden über ${quelleText}.<br>
-          Ticketnummer: ${ergebnis.ticket.ticketNumber || "–"}<br>
-          Betreff: ${ergebnis.ticket.subject || "–"}<br>
-          <a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br><br>
-          <em>Dieser Lead ist bereits erfasst und kann nur noch direkt in weclapp weiterbearbeitet werden.</em>
-        </div>
-        <button type="button" id="angebotskonfiguratorBtn" class="secondary" disabled>Angebotskonfigurator starten (folgt)</button>`;
-      } else {
-        restFormular.style.display = "block";
-
-        if (ergebnis.ticketGefunden) {
-          const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketGefunden.id}`;
-          zielDiv.innerHTML = `<div class="block ok">
-            <div class="block-title">✅ Kein abgeschlossener Lead gefunden</div>
-            Ticket existiert bereits (Ticketnummer: ${ergebnis.ticketGefunden.ticketNumber || "–"}), wird aber noch vervollständigt.<br>
-            <a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br><br>
-            Du kannst normal fortfahren.
-          </div>`;
-        } else {
-          zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
-        }
-      }
-    } catch (err) {
-      zielDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>${err.message}</div>`;
-    } finally {
-      loading.style.display = "none";
-      btn.disabled = false;
-    }
-  });
-
   // ---------- Pruefung Kontakt ----------
   document.getElementById("pruefungKontaktBtn").addEventListener("click", async () => {
-    if (!pruefeTelefonAnzeige()) {
-      telefonInput.focus();
-      return;
-    }
-    if (!pruefeEmailAnzeige()) {
-      emailInput.focus();
-      return;
-    }
-
     const btn = document.getElementById("pruefungKontaktBtn");
     const loading = document.getElementById("loadingKontakt");
     const zielDiv = document.getElementById("kontaktBlockErgebnis");
@@ -673,8 +505,7 @@
         const zeilen = [
           `${t.firstName || ""} ${t.lastName || ""}`.trim(),
           t.email || "",
-          t.telefon || "",
-          `Party-ID: ${t.id}`
+          t.telefon || ""
         ].filter(Boolean).join("<br>");
         optionenHtml += `
           <div class="kandidat-option">
@@ -755,9 +586,7 @@
       let firmaOptionenHtml = "";
       data.firma.treffer.forEach((f, i) => {
         const adresseText = [f.strasse, [f.plz, f.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        const firmaName = f.company || f.company2 || "";
-        const firmaNameMitKdNr = f.kundennummer ? `${firmaName} (Kd-Nr. ${f.kundennummer})` : firmaName;
-        const zeilen = [firmaNameMitKdNr, adresseText].filter(Boolean).join("<br>");
+        const zeilen = [f.company || f.company2 || "", adresseText].filter(Boolean).join("<br>");
         firmaOptionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
@@ -818,7 +647,7 @@
       kontaktEmail = kontaktWahl.kandidat.email || "";
       kontaktTelefon = kontaktWahl.kandidat.telefon || "";
     } else {
-      kontaktName = [daten.vorname, daten.nachname].filter(Boolean).join(" ").trim();
+      kontaktName = daten.name;
       kontaktEmail = daten.email;
       kontaktTelefon = daten.telefon;
     }
@@ -843,6 +672,7 @@
     if (daten.vkcId) zeilen.push(`VKC-ID: ${daten.vkcId}`);
     if (daten.vkcUrl) zeilen.push(`VKC-URL: ${daten.vkcUrl}`);
     if (daten.leadgrund) zeilen.push(`Leadgrund: ${daten.leadgrund}`);
+    if (daten.ticketNummer) zeilen.push(`Ticketnummer: ${daten.ticketNummer}`);
     if (daten.notizen) {
       zeilen.push("");
       zeilen.push("Notizen:");
@@ -880,15 +710,6 @@
 
   // ---------- Ticket erzeugen/aktualisieren ----------
   document.getElementById("ticketAnlegenBtn").addEventListener("click", async () => {
-    if (!pruefeTelefonAnzeige()) {
-      telefonInput.focus();
-      return;
-    }
-    if (!pruefeEmailAnzeige()) {
-      emailInput.focus();
-      return;
-    }
-
     const ticketErgebnisDiv = document.getElementById("ticketErgebnis");
     const zugang = getZugang();
     if (!zugang) {
@@ -929,8 +750,7 @@
         : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
         ? "Ticketnummer nicht gefunden — neues Ticket wurde stattdessen angelegt"
         : "Neues Ticket wurde angelegt";
-      const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketId}`;
-      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticketnummer: ${ergebnis.ticketNummer || "–"}<br><a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br>Betreff: ${ergebnis.ticketSubject}</div>`;
+      ticketErgebnisDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ ${aktionText}</div>Ticket-ID: ${ergebnis.ticketId}<br>Betreff: ${ergebnis.ticketSubject}</div>`;
     } catch (err) {
       ticketErgebnisDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler beim Anlegen</div>${err.message}</div>`;
     }
