@@ -462,7 +462,7 @@ function berlinZeitstempel() {
   });
 }
 
-async function kommentarErstellen(ticketId, notizen, erfasstVon) {
+async function kommentarErstellen(ticketId, notizen, erfasstVon, betriebsart) {
   // comment.comment ist laut Spezifikation reiner Text (kein "format": "html" wie
   // bei ticket.description) - HTML-Tags wuerden hier woertlich angezeigt statt
   // interpretiert. Deshalb einfache Zeilenumbrueche statt <br>/<b>.
@@ -473,6 +473,11 @@ async function kommentarErstellen(ticketId, notizen, erfasstVon) {
   ].join("\n");
 
   let text = kopf;
+  // Betriebsart bewusst hier im Kommentar statt als eigenes Zusatzfeld -
+  // dient spaeter als Grundlage fuer eine KI-generierte Zusammenfassung.
+  if (betriebsart) {
+    text += `\n\nBetriebsart: ${betriebsart}`;
+  }
   if (notizen) {
     text += `\n\n${notizen}`;
   }
@@ -487,11 +492,13 @@ async function kommentarErstellen(ticketId, notizen, erfasstVon) {
   });
 }
 
-function baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart }) {
+// Betriebsart wird bewusst NICHT als eigenes Zusatzfeld gesetzt (siehe
+// kommentarErstellen) - landet stattdessen als Text im ersten Kommentar, da
+// eigene Betriebsart-Felder an anderer Stelle im System bereits existieren.
+function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   const attrs = [];
   if (vkcId) attrs.push({ attributeDefinitionId: ATTR_LEAD_ID, stringValue: vkcId });
   if (vkcUrl) attrs.push({ attributeDefinitionId: ATTR_LEAD_URL, stringValue: vkcUrl });
-  if (betriebsart) attrs.push({ attributeDefinitionId: ATTR_LEAD_BETRIEBSART, stringValue: betriebsart });
   if (leadgrund && LEAD_GRUND_OPTIONEN[leadgrund]) {
     attrs.push({
       attributeDefinitionId: ATTR_LEAD_GRUND,
@@ -518,7 +525,7 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
     disableEmailTemplates: false,
     isTemplate: false,
     legacyTimeAndMaterialTicket: false,
-    customAttributes: baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart })
+    customAttributes: baueCustomAttributes({ vkcId, vkcUrl, leadgrund })
   };
 
   if (solutionDueDate) {
@@ -567,14 +574,11 @@ async function ticketsInLeadstartKategorieLaden() {
 // Reihenfolge: zuerst Ticketnummer (direkter, schneller exakter Filter), erst
 // wenn das nichts findet und VKC-ID/VKC-URL angegeben sind, wird die Kategorie
 // vollstaendig geladen und clientseitig auf die Zusatzfelder geprueft.
-async function leaddetailsPruefen(ticketNummer, vkcId, vkcUrl) {
-  if (ticketNummer) {
-    const gefunden = await ticketSuchenPerNummer(ticketNummer);
-    if (gefunden) {
-      return { gefunden: true, gefundenUeber: "ticketNummer", ticket: gefunden };
-    }
-  }
-
+// Die Ticketnummer wird bewusst NICHT als Pruefkriterium genutzt: der Sales
+// Navigator legt sie immer schon VOR jeder Leadstart-Bearbeitung an, sie sagt
+// also nichts darueber aus, ob der Lead bereits fertig bearbeitet wurde. Nur
+// VKC-ID/VKC-URL (die erst DURCH Leadstart gesetzt werden) zeigen das zuverlaessig.
+async function leaddetailsPruefen(vkcId, vkcUrl) {
   if (vkcId || vkcUrl) {
     const tickets = await ticketsInLeadstartKategorieLaden();
     for (const ticket of tickets) {
@@ -619,7 +623,7 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
     if (!Number.isNaN(parsed)) ticket.solutionDueDate = parsed;
   }
 
-  const neueAttrs = baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart });
+  const neueAttrs = baueCustomAttributes({ vkcId, vkcUrl, leadgrund });
   const bestehendeAttrs = (ticket.customAttributes || []).filter(
     (a) => !neueAttrs.some((n) => n.attributeDefinitionId === a.attributeDefinitionId)
   );
@@ -754,7 +758,7 @@ exports.handler = async (event) => {
   // ---------- Action: check_leaddetails (prueft ob Lead per Ticketnummer/VKC bereits existiert) ----------
   if (body.action === "check_leaddetails") {
     try {
-      const ergebnis = await leaddetailsPruefen(ticketNummer, vkcId, vkcUrl);
+      const ergebnis = await leaddetailsPruefen(vkcId, vkcUrl);
       return {
         statusCode: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -860,7 +864,7 @@ exports.handler = async (event) => {
         aktion = "neu_angelegt";
       }
 
-      await kommentarErstellen(ticket.id, notizen, erfasserEmail);
+      await kommentarErstellen(ticket.id, notizen, erfasserEmail, betriebsart);
 
       return {
         statusCode: 200,
