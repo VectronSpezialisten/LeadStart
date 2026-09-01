@@ -610,7 +610,18 @@
         <button type="button" id="angebotskonfiguratorBtn" class="secondary" disabled>Angebotskonfigurator starten (folgt)</button>`;
       } else {
         restFormular.style.display = "block";
-        zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
+
+        if (ergebnis.ticketGefunden) {
+          const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketGefunden.id}`;
+          zielDiv.innerHTML = `<div class="block ok">
+            <div class="block-title">✅ Kein abgeschlossener Lead gefunden</div>
+            Ticket existiert bereits (Ticketnummer: ${ergebnis.ticketGefunden.ticketNumber || "–"}), wird aber noch vervollständigt.<br>
+            <a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br><br>
+            Du kannst normal fortfahren.
+          </div>`;
+        } else {
+          zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
+        }
       }
     } catch (err) {
       zielDiv.innerHTML = `<div class="block warn"><div class="block-title">⚠️ Fehler</div>${err.message}</div>`;
