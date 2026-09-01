@@ -754,7 +754,9 @@
       let firmaOptionenHtml = "";
       data.firma.treffer.forEach((f, i) => {
         const adresseText = [f.strasse, [f.plz, f.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-        const zeilen = [f.company || f.company2 || "", adresseText].filter(Boolean).join("<br>");
+        const firmaName = f.company || f.company2 || "";
+        const firmaNameMitKdNr = f.kundennummer ? `${firmaName} (Kd-Nr. ${f.kundennummer})` : firmaName;
+        const zeilen = [firmaNameMitKdNr, adresseText].filter(Boolean).join("<br>");
         firmaOptionenHtml += `
           <div class="kandidat-option">
             <input type="radio" name="firmaAuswahl" id="firma_${i}" value="${f.id}">
