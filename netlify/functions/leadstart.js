@@ -611,6 +611,12 @@ async function ticketSuchenPerNummer(ticketNummer) {
 async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter, betriebsart }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
+  // Der Status muss ZWINGEND vor/gleichzeitig mit assignedUserId und followUpDate
+  // gesetzt werden: weclapp verlangt bei internem Status "UNASSIGNED" (z.B. bei
+  // frisch vom Sales Navigator erzeugten Tickets) assignedUserId=null und verbietet
+  // followUpDate komplett. Erst durch den Statuswechsel auf "Beratung & FollowUp"
+  // (intern WAITING) sind beide Felder ueberhaupt zulaessig.
+  ticket.ticketStatusId = TICKET_STATUS_ID;
   ticket.partyId = partyId;
   ticket.contactId = contactId;
   ticket.followUpDate = Date.now();
