@@ -390,10 +390,21 @@ async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
   return created.id;
 }
 
+const EMAIL_MUSTER = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function kontaktZuFirmaHinzufuegen(firmaId, kontaktId) {
   const firma = await weclappGetById(`/party/id/${firmaId}`);
   const vorhandeneKontakte = firma.contacts || [];
   const bereitsVerknuepft = vorhandeneKontakte.some((c) => c.id === kontaktId);
+
+  // Schutz gegen leere ("") oder fehlerhaft gespeicherte E-Mail-Adressen am
+  // Datensatz: beim vollstaendigen Zurueckschreiben (PUT verlangt das komplette
+  // Objekt) wuerde weclapp einen bereits vorhandenen Wert neu validieren und
+  // ablehnen, obwohl wir ihn nie selbst gesetzt haben. Das betrifft ausdruecklich
+  // auch Kontakte/Firmen ohne hinterlegte E-Mail (dort oft "" statt komplett fehlend).
+  if (firma.email !== undefined && !EMAIL_MUSTER.test(firma.email || "")) {
+    delete firma.email;
+  }
 
   if (!bereitsVerknuepft) {
     firma.contacts = [...vorhandeneKontakte, { id: kontaktId }];
