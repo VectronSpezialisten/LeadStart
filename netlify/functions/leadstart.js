@@ -419,22 +419,26 @@ async function firmaAnlegen({ firma, betriebsart, strasse, plz, ort, kontaktId }
     partyType: "ORGANIZATION",
     company: firma || "",
     customerBusinessType: "B2B",
+    customer: true, // noetig, damit weclapp eine Kundennummer vergibt - trotzdem
+                     // kein "richtiger" Kunde, das steuert weiterhin leadStatus
+    customerSalesChannel: "NET1", // "Standard Netto" - Pflichtfeld bei customer: true
     leadStatus: "NEW",
     contacts: kontaktId ? [{ id: kontaktId }] : [],
     ...standardPartyFelder()
   };
 
-  if (strasse || plz || ort) {
-    payload.addresses = [
-      {
-        street1: strasse || "",
-        zipcode: plz || "",
-        city: ort || "",
-        countryCode: "DE",
-        primaryAddress: true
-      }
-    ];
-  }
+  // Adresse wird IMMER angelegt (nicht nur wenn Strasse/PLZ/Ort ausgefuellt sind),
+  // weil countryCode an der Adresse Pflichtfeld ist - ohne jede Adresse fehlt
+  // sonst das Land komplett, selbst wenn es nur "Deutschland" als Standard waere.
+  payload.addresses = [
+    {
+      street1: strasse || "",
+      zipcode: plz || "",
+      city: ort || "",
+      countryCode: "DE",
+      primaryAddress: true
+    }
+  ];
 
   const created = await weclappPost("/party", payload);
   return { id: created.id, company: created.company, company2: created.company2 };
