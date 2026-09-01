@@ -331,6 +331,14 @@
       <label class="first-in-block" for="notizen">Notizen</label>
       <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
 
+      <label for="bearbeiter">Zuweisen an</label>
+      <select id="bearbeiter" name="bearbeiter">
+        <option value="">Bitte wählen …</option>
+        <option value="karsten.brauer@kasse-stimmt.de">Karsten</option>
+        <option value="judith.thiede@kasse-stimmt.de">Judith</option>
+        <option value="katja.malyshkina@kasse-stimmt.de">Katja</option>
+      </select>
+
       <label for="leadgrund">Leadgrund</label>
       <select id="leadgrund" name="leadgrund">
         <option value="">Bitte wählen …</option>
@@ -470,6 +478,7 @@
       vkcId: document.getElementById("vkcId").value.trim(),
       vkcUrl: document.getElementById("vkcUrl").value.trim(),
       notizen: document.getElementById("notizen").value.trim(),
+      bearbeiter: document.getElementById("bearbeiter").value,
       leadgrund: document.getElementById("leadgrund").value,
       ticketNummer: document.getElementById("ticketNummer").value.trim()
     };
