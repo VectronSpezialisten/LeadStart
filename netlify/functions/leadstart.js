@@ -36,6 +36,7 @@ function ermittleAssignedUserId(bearbeiterEmail) {
 // Custom-Attribute-IDs am Ticket (Gruppe "POS & Pay")
 const ATTR_LEAD_ID = "2541107";
 const ATTR_LEAD_URL = "2541111";
+const ATTR_LEAD_BETRIEBSART = "2541579";
 const ATTR_LEAD_GRUND = "2541201";
 const LEAD_GRUND_OPTIONEN = {
   "Betreuungswechsel": "2541202",
@@ -439,12 +440,11 @@ async function firmaAnlegen({ firma, betriebsart, strasse, plz, ort, kontaktId }
   return { id: created.id, company: created.company, company2: created.company2 };
 }
 
-function baueTicketBeschreibung({ betriebsart, vkcId, vkcUrl }) {
-  let teile = [];
-  if (betriebsart) teile.push(`<b>Betriebsart:</b> ${betriebsart}`);
-  if (vkcId) teile.push(`<b>VKC-ID:</b> ${vkcId}`);
-  if (vkcUrl) teile.push(`<b>VKC-URL:</b> <a href="${vkcUrl}">${vkcUrl}</a>`);
-  return teile.join("<br>");
+// Betriebsart, VKC-ID und VKC-URL sind eigene Zusatzfelder (siehe baueCustomAttributes)
+// und stehen daher NICHT mehr in der Beschreibung. Die Funktion bleibt bestehen,
+// falls spaeter weitere reine Freitext-Meta-Angaben dazukommen.
+function baueTicketBeschreibung() {
+  return "";
 }
 
 function berlinZeitstempel() {
@@ -459,15 +459,18 @@ function berlinZeitstempel() {
 }
 
 async function kommentarErstellen(ticketId, notizen, erfasstVon) {
+  // comment.comment ist laut Spezifikation reiner Text (kein "format": "html" wie
+  // bei ticket.description) - HTML-Tags wuerden hier woertlich angezeigt statt
+  // interpretiert. Deshalb einfache Zeilenumbrueche statt <br>/<b>.
   const kopf = [
-    `<b>Absender:</b> ${erfasstVon || "unbekannt"}`,
-    `<b>Quelle:</b> Leadstart-App`,
-    `<b>Zeitstempel:</b> ${berlinZeitstempel()} Uhr`
-  ].join("<br>");
+    `Absender: ${erfasstVon || "unbekannt"}`,
+    `Quelle: Leadstart-App`,
+    `Zeitstempel: ${berlinZeitstempel()} Uhr`
+  ].join("\n");
 
   let text = kopf;
   if (notizen) {
-    text += `<br><br>${notizen.replace(/\n/g, "<br>")}`;
+    text += `\n\n${notizen}`;
   }
 
   await weclappPost("/comment", {
@@ -480,10 +483,11 @@ async function kommentarErstellen(ticketId, notizen, erfasstVon) {
   });
 }
 
-function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
+function baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart }) {
   const attrs = [];
   if (vkcId) attrs.push({ attributeDefinitionId: ATTR_LEAD_ID, stringValue: vkcId });
   if (vkcUrl) attrs.push({ attributeDefinitionId: ATTR_LEAD_URL, stringValue: vkcUrl });
+  if (betriebsart) attrs.push({ attributeDefinitionId: ATTR_LEAD_BETRIEBSART, stringValue: betriebsart });
   if (leadgrund && LEAD_GRUND_OPTIONEN[leadgrund]) {
     attrs.push({
       attributeDefinitionId: ATTR_LEAD_GRUND,
@@ -493,7 +497,7 @@ function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   return attrs;
 }
 
-async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund, bearbeiter }) {
+async function ticketAnlegen({ partyId, contactId, subject, beschreibung, solutionDueDate, vkcId, vkcUrl, leadgrund, bearbeiter, betriebsart }) {
   const heute = Date.now();
   const payload = {
     subject: (subject || "Neuer Lead").slice(0, 150),
@@ -510,7 +514,7 @@ async function ticketAnlegen({ partyId, contactId, subject, beschreibung, soluti
     disableEmailTemplates: false,
     isTemplate: false,
     legacyTimeAndMaterialTicket: false,
-    customAttributes: baueCustomAttributes({ vkcId, vkcUrl, leadgrund })
+    customAttributes: baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart })
   };
 
   if (solutionDueDate) {
@@ -596,7 +600,7 @@ async function ticketSuchenPerNummer(ticketNummer) {
   return treffer.length > 0 ? treffer[0] : null;
 }
 
-async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter }) {
+async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, bearbeiter, betriebsart }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
   ticket.partyId = partyId;
@@ -611,7 +615,7 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
     if (!Number.isNaN(parsed)) ticket.solutionDueDate = parsed;
   }
 
-  const neueAttrs = baueCustomAttributes({ vkcId, vkcUrl, leadgrund });
+  const neueAttrs = baueCustomAttributes({ vkcId, vkcUrl, leadgrund, betriebsart });
   const bestehendeAttrs = (ticket.customAttributes || []).filter(
     (a) => !neueAttrs.some((n) => n.attributeDefinitionId === a.attributeDefinitionId)
   );
@@ -774,23 +778,34 @@ exports.handler = async (event) => {
         kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw });
       }
 
+      // Eigener try/catch fuer den Firma-Schritt: falls dieser fehlschlaegt,
+      // NACHDEM der Kontakt bereits erfolgreich angelegt wurde, soll die
+      // Fehlermeldung das deutlich sagen - statt eines verwaisten Kontakts mit
+      // einer verwirrenden, allgemeinen Fehlermeldung ohne Kontext.
       let firmaInfo;
-      if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
-        firmaInfo = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
-      } else {
-        firmaInfo = await firmaAnlegen({
-          firma: companyRaw || vollerName,
-          betriebsart,
-          strasse,
-          plz,
-          ort,
-          kontaktId
-        });
+      try {
+        if (firmaAuswahl.modus === "vorhanden" && firmaAuswahl.partyId) {
+          firmaInfo = await kontaktZuFirmaHinzufuegen(firmaAuswahl.partyId, kontaktId);
+        } else {
+          firmaInfo = await firmaAnlegen({
+            firma: companyRaw || vollerName,
+            betriebsart,
+            strasse,
+            plz,
+            ort,
+            kontaktId
+          });
+        }
+      } catch (firmaFehler) {
+        const kontaktHinweis = kontaktAuswahl.modus === "vorhanden"
+          ? `Kontakt (bestehend, ID ${kontaktId}) wurde verwendet.`
+          : `Kontakt wurde neu angelegt (ID ${kontaktId}) - dieser Kontakt existiert jetzt in weclapp, auch wenn die Firma nicht angelegt werden konnte. Beim naechsten Versuch bitte diesen Kontakt als "vorhanden" auswaehlen, um keine Dublette zu erzeugen.`;
+        throw new Error(`Firma konnte nicht angelegt/verknuepft werden: ${firmaFehler.message}. ${kontaktHinweis}`);
       }
       const firmaId = firmaInfo.id;
       const betreffName = firmaInfo.company || firmaInfo.company2 || vollerName || "Neuer Lead";
 
-      const beschreibung = baueTicketBeschreibung({ betriebsart, vkcId, vkcUrl });
+      const beschreibung = baueTicketBeschreibung();
 
       let ticket;
       let aktion;
@@ -806,7 +821,8 @@ exports.handler = async (event) => {
             vkcUrl,
             leadgrund,
             solutionDueDate,
-            bearbeiter
+            bearbeiter,
+            betriebsart
           });
           aktion = "aktualisiert";
         } else {
@@ -819,7 +835,8 @@ exports.handler = async (event) => {
             vkcId,
             vkcUrl,
             leadgrund,
-            bearbeiter
+            bearbeiter,
+            betriebsart
           });
           aktion = "neu_angelegt_ticketnummer_nicht_gefunden";
         }
@@ -833,7 +850,8 @@ exports.handler = async (event) => {
           vkcId,
           vkcUrl,
           leadgrund,
-          bearbeiter
+          bearbeiter,
+          betriebsart
         });
         aktion = "neu_angelegt";
       }
