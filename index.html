@@ -673,7 +673,8 @@
         const zeilen = [
           `${t.firstName || ""} ${t.lastName || ""}`.trim(),
           t.email || "",
-          t.telefon || ""
+          t.telefon || "",
+          `Party-ID: ${t.id}`
         ].filter(Boolean).join("<br>");
         optionenHtml += `
           <div class="kandidat-option">
