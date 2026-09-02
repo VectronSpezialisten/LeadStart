@@ -316,6 +316,9 @@
       <div class="loading-inline" id="loadingFirma"><span class="spinner"></span>Wird geprüft und recherchiert …</div>
       <div id="firmaBlockErgebnis"></div>
 
+      <label for="notizen">Notizen</label>
+      <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
+
       <!-- KI-Zusammenfassung: erscheint erst, wenn Kontakt UND Firma bestaetigt wurden -->
       <div id="kiZusammenfassungBereich" style="display:none;">
         <div class="block-heading">KI-Zusammenfassung</div>
@@ -329,10 +332,7 @@
       <!-- Block: Info -->
       <div class="block-heading">Info</div>
 
-      <label class="first-in-block" for="notizen">Notizen</label>
-      <textarea id="notizen" name="notizen" rows="8" placeholder="Gesprächsnotizen, Anforderungen, geplante Hard-/Software etc. – einfach den kompletten Text hier einfügen"></textarea>
-
-      <label for="bearbeiter">Zuweisen an</label>
+      <label class="first-in-block" for="bearbeiter">Zuweisen an</label>
       <select id="bearbeiter" name="bearbeiter">
         <option value="">Bitte wählen …</option>
         <option value="karsten.brauer@kasse-stimmt.de">Karsten</option>
@@ -841,9 +841,6 @@
     zeilen.push(`Firma/Betrieb: ${firmaName || "(unbekannt)"}`);
     if (daten.betriebsart) zeilen.push(`Betriebsart: ${daten.betriebsart}`);
     if (firmaAdresse) zeilen.push(`Adresse: ${firmaAdresse}`);
-    if (daten.vkcId) zeilen.push(`VKC-ID: ${daten.vkcId}`);
-    if (daten.vkcUrl) zeilen.push(`VKC-URL: ${daten.vkcUrl}`);
-    if (daten.leadgrund) zeilen.push(`Leadgrund: ${daten.leadgrund}`);
     if (daten.notizen) {
       zeilen.push("");
       zeilen.push("Notizen:");
@@ -926,7 +923,7 @@
 
       const ergebnis = await response.json();
       const ticketLink = `https://thiedebrauer.weclapp.com/app/ticket/${ergebnis.ticketId}`;
-      const konfiguratorLink = `${KONFIGURATOR_URL}/?partyId=${encodeURIComponent(ergebnis.firmaId)}&email=${encodeURIComponent(zugang.email)}&pw=${encodeURIComponent(zugang.passwort)}`;
+      const konfiguratorLink = `${KONFIGURATOR_URL}/?ticketnummer=${encodeURIComponent(ergebnis.ticketNummer)}&email=${encodeURIComponent(zugang.email)}`;
       const aktionText = ergebnis.aktion === "aktualisiert"
         ? "Bestehendes Ticket wurde aktualisiert"
         : ergebnis.aktion === "neu_angelegt_ticketnummer_nicht_gefunden"
