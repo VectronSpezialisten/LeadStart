@@ -507,9 +507,17 @@ function baueCustomAttributes({ vkcId, vkcUrl, leadgrund }) {
   if (vkcId) attrs.push({ attributeDefinitionId: ATTR_LEAD_ID, stringValue: vkcId });
   if (vkcUrl) attrs.push({ attributeDefinitionId: ATTR_LEAD_URL, stringValue: vkcUrl });
   if (leadgrund && LEAD_GRUND_OPTIONEN[leadgrund]) {
+    // WICHTIG: Leadgrund ist in weclapp ein Single-Select-Zusatzfeld. Das
+    // OpenAPI-Schema kennt fuer customAttributes sowohl "selectedValueId"
+    // (einzelner String, fuer Single-Select) als auch "selectedValues"
+    // (Array von {id}, fuer Multi-Select). Der bisherige Code nutzte
+    // "selectedValues" - dadurch matchte/speicherte weclapp den Leadgrund
+    // nicht zuverlaessig. Empirisch zu bestaetigen; falls es weiterhin nicht
+    // matcht, bitte im Vergleich mit einem manuell in weclapp gesetzten
+    // Leadgrund pruefen, wie das Feld tatsaechlich zurueckgegeben wird.
     attrs.push({
       attributeDefinitionId: ATTR_LEAD_GRUND,
-      selectedValues: [{ id: LEAD_GRUND_OPTIONEN[leadgrund] }]
+      selectedValueId: LEAD_GRUND_OPTIONEN[leadgrund]
     });
   }
   return attrs;
@@ -837,7 +845,8 @@ exports.handler = async (event) => {
         throw new Error(`Firma konnte nicht angelegt/verknuepft werden: ${firmaFehler.message}. ${kontaktHinweis}`);
       }
       const firmaId = firmaInfo.id;
-      const betreffName = firmaInfo.company || firmaInfo.company2 || vollerName || "Neuer Lead";
+      const betreffBasis = firmaInfo.company || firmaInfo.company2 || vollerName || "Neuer Lead";
+      const betreffName = `${betreffBasis} | Vectron POS`;
 
       const beschreibung = baueTicketBeschreibung();
 
