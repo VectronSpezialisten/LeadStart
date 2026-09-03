@@ -628,6 +628,10 @@
             Ticket existiert bereits (Ticketnummer: ${ergebnis.ticketGefunden.ticketNumber || "–"}), wird aber noch vervollständigt.<br>
             <a href="${ticketLink}" target="_blank" rel="noopener">Ticket in weclapp öffnen</a><br><br>
             Du kannst normal fortfahren.
+          </div>
+          <div class="block warn">
+            <div class="block-title">⚠️ Hinweis</div>
+            Falls dieses Ticket in weclapp noch im Status "Noch nicht zugewiesen" ist, muss es zuerst dort manuell einem Bearbeiter zugewiesen werden. Andernfalls kann es beim Absenden nicht aktualisiert werden — es wird stattdessen automatisch ein neues Ticket angelegt.
           </div>`;
         } else {
           zielDiv.innerHTML = `<div class="block ok"><div class="block-title">✅ Kein bestehender Lead gefunden</div>Du kannst normal fortfahren.</div>`;
