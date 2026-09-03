@@ -606,6 +606,13 @@ async function leaddetailsPruefen(ticketNummer, vkcId, vkcUrl) {
   let ticketGefunden = null;
   if (ticketNummer) {
     ticketGefunden = await ticketSuchenPerNummer(ticketNummer);
+    if (ticketGefunden) {
+      // Ob der Hinweis "muss zuerst zugewiesen werden" angezeigt wird, haengt vom
+      // TATSAECHLICHEN Status ab - nicht pauschal von "Ticket existiert bereits".
+      // ticketStatusId zeigt nur auf die ticketStatus-Entitaet; der interne, stabile
+      // Statuswert (internalTicketStatus) muss dafuer separat nachgeladen werden.
+      ticketGefunden.nichtZugewiesen = await ticketStatusIstNichtZugewiesen(ticketGefunden.ticketStatusId);
+    }
   }
 
   if (vkcId || vkcUrl) {
@@ -621,6 +628,20 @@ async function leaddetailsPruefen(ticketNummer, vkcId, vkcUrl) {
   }
 
   return { gefunden: false, ticketGefunden };
+}
+
+// Laedt die ticketStatus-Entitaet zu einer ticketStatusId und prueft, ob ihr
+// interner, kanalunabhaengiger Status "UNASSIGNED" ("Noch nicht zugewiesen") ist.
+// Bei einem Fehler (z.B. Status nicht abrufbar) geben wir im Zweifel "false"
+// zurueck, um keine falsche Warnung anzuzeigen.
+async function ticketStatusIstNichtZugewiesen(ticketStatusId) {
+  if (!ticketStatusId) return false;
+  try {
+    const status = await weclappGetById(`/ticketStatus/id/${ticketStatusId}`);
+    return status.internalTicketStatus === "UNASSIGNED";
+  } catch (err) {
+    return false;
+  }
 }
 
 async function ticketSuchenPerNummer(ticketNummer) {
