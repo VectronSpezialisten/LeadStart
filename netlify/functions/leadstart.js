@@ -15,6 +15,8 @@
 const WECLAPP_BASE = `https://${process.env.WECLAPP_DOMAIN}/webapp/api/v2`;
 
 // Feste Konfigurationswerte fuer neu erzeugte Tickets (bei Bedarf hier anpassen)
+// Bestaetigt per API (ticketCategory/242030): name "Office", parentTicketCategoryId
+// "228013" (Team POS), path "Team POS\Office" - die ID ist also korrekt.
 const TICKET_CATEGORY_ID = "242030";   // Office (unter Team POS)
 const TICKET_STATUS_ID = "1936022";    // Beratung & FollowUp
 const TICKET_PRIORITY_ID = "3660";     // normal
@@ -635,19 +637,28 @@ async function ticketSuchenPerNummer(ticketNummer) {
   return treffer.length > 0 ? treffer[0] : null;
 }
 
-// WICHTIG: ticketStatusId und assignedUserId werden beim Aktualisieren bewusst
+// WICHTIG: ticketStatusId und followUpDate werden beim Aktualisieren bewusst
 // NICHT gesetzt. Empirisch nachgewiesen (Vergleich mit einem am 28.08. erfolgreich
-// aktualisierten Mail2Ticket-Ticket): Sobald diese beiden Felder beim PUT eines
+// aktualisierten Mail2Ticket-Ticket): Sobald diese Felder beim PUT eines
 // bestehenden Tickets mitgeschickt werden, schlaegt der Aufruf bei Tickets aus dem
 // Sales-Navigator/Mail2Ticket-Kanal zuverlaessig fehl ("property resolvedYourIssue
-// is read-only", unabhaengig vom sonstigen Payload). Ohne diese beiden Felder
-// funktioniert derselbe Ablauf nachweislich. Die Bearbeiter-Auswahl geht dadurch
-// nicht verloren, sondern landet stattdessen als Hinweis im Kommentar.
-async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate }) {
+// is read-only", unabhaengig vom sonstigen Payload). Ohne diese Felder
+// funktioniert derselbe Ablauf nachweislich.
+//
+// assignedUserId (Bearbeiter) wird jetzt versuchsweise gesetzt: bei Tickets, die
+// nicht (mehr) am bekannten Sales-Navigator-Bug haengen - z.B. weil sie zwischen-
+// zeitlich manuell zugewiesen wurden - funktioniert das PUT damit direkt. Schlaegt
+// der Versuch fehl, wird derselbe PUT unveraendert ohne assignedUserId wiederholt
+// (bisheriges Verhalten) - die Bearbeiter-Auswahl landet dann weiterhin zusaetzlich
+// als Hinweis im Kommentar, damit sie nicht verloren geht.
+async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung, vkcId, vkcUrl, leadgrund, solutionDueDate, subject, bearbeiter }) {
   const ticket = await weclappGetById(`/ticket/id/${ticketId}`);
 
   ticket.partyId = partyId;
   ticket.contactId = contactId;
+  if (subject) {
+    ticket.subject = subject.slice(0, 150);
+  }
   // followUpDate wird beim Aktualisieren bewusst NICHT gesetzt: das verlangt
   // zwingend Status "WAITING", den wir hier nicht erzwingen (siehe Kommentar oben).
   if (beschreibung) {
@@ -663,6 +674,16 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
     (a) => !neueAttrs.some((n) => n.attributeDefinitionId === a.attributeDefinitionId)
   );
   ticket.customAttributes = [...bestehendeAttrs, ...neueAttrs];
+
+  if (bearbeiter) {
+    try {
+      const ticketMitBearbeiter = { ...ticket, assignedUserId: ermittleAssignedUserId(bearbeiter) };
+      return await weclappPut(`/ticket/id/${ticketId}`, ticketMitBearbeiter);
+    } catch (bearbeiterFehler) {
+      // Bekannter weclapp-Bug (siehe Kommentar oben) - unveraendert ohne
+      // assignedUserId erneut versuchen, statt den ganzen Vorgang abzubrechen.
+    }
+  }
 
   const aktualisiert = await weclappPut(`/ticket/id/${ticketId}`, ticket);
   return aktualisiert;
@@ -874,7 +895,9 @@ exports.handler = async (event) => {
               vkcId,
               vkcUrl,
               leadgrund,
-              solutionDueDate
+              solutionDueDate,
+              subject: betreffName,
+              bearbeiter
             });
             aktion = "aktualisiert";
           } catch (ticketFehler) {
