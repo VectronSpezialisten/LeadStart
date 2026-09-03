@@ -374,7 +374,7 @@ async function weclappGetById(path) {
   return response.json();
 }
 
-async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
+async function kontaktAnlegen({ vorname, nachname, telefon, email, anrede }) {
   const lastNameWert = nachname || vorname || "";
   const firstNameWert = nachname ? (vorname || "") : "";
 
@@ -387,6 +387,7 @@ async function kontaktAnlegen({ vorname, nachname, telefon, email }) {
   };
   if (telefon) payload.mobilePhone1 = telefon;
   if (email) payload.email = email;
+  if (anrede) payload.salutation = anrede; // "MR" | "MRS" | "NO_SALUTATION", siehe weclapp-Enum "salutation"
 
   const created = await weclappPost("/party", payload);
   return created.id;
@@ -761,6 +762,7 @@ exports.handler = async (event) => {
     };
   }
 
+  const anredeRaw = body.anrede || "";
   const vornameRaw = body.vorname || "";
   const nachnameRaw = body.nachname || "";
   const vollerName = [vornameRaw, nachnameRaw].filter(Boolean).join(" ").trim();
@@ -817,7 +819,7 @@ exports.handler = async (event) => {
       if (kontaktAuswahl.modus === "vorhanden" && kontaktAuswahl.partyId) {
         kontaktId = kontaktAuswahl.partyId;
       } else {
-        kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw });
+        kontaktId = await kontaktAnlegen({ vorname: vornameRaw, nachname: nachnameRaw, telefon: phoneRaw, email: emailRaw, anrede: anredeRaw });
       }
 
       // Eigener try/catch fuer den Firma-Schritt: falls dieser fehlschlaegt,
