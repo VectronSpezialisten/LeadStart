@@ -276,7 +276,15 @@
       <!-- Block: Kontakt -->
       <div class="block-heading">Kontakt</div>
 
-      <label class="first-in-block" for="vorname">Vorname</label>
+      <label class="first-in-block" for="anrede">Anrede</label>
+      <select id="anrede" name="anrede">
+        <option value="">Bitte wählen …</option>
+        <option value="MR">Herr</option>
+        <option value="MRS">Frau</option>
+        <option value="NO_SALUTATION">Keine Anrede</option>
+      </select>
+
+      <label for="vorname">Vorname</label>
       <input type="text" id="vorname" name="vorname" placeholder="z.B. Karsten">
 
       <label for="nachname">Nachname</label>
@@ -488,6 +496,7 @@
 
   function sammleFormularDaten() {
     return {
+      anrede: document.getElementById("anrede").value,
       vorname: document.getElementById("vorname").value.trim(),
       nachname: document.getElementById("nachname").value.trim(),
       telefon: document.getElementById("telefon").value.trim(),
