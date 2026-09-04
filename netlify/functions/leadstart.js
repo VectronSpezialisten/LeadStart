@@ -95,9 +95,14 @@ function normalizeName(name) {
 
 function normalizeCompanyName(name) {
   if (!name) return "";
+  // WICHTIG: \s+ (mind. ein Leerzeichen) statt \s* vor der Rechtsform-Gruppe -
+  // sonst matcht "GmbH" auch MITTEN im Wort, z.B. bei "gGmbH" (gemeinnuetzige
+  // GmbH): die letzten 4 Buchstaben "gmbh" wuerden faelschlich als "GmbH"
+  // erkannt und abgeschnitten, sodass nur ein einzelnes "g" uebrig bleibt.
+  // "gGmbH" steht deshalb zusaetzlich explizit als eigene Rechtsform in der Liste.
   return name
     .trim()
-    .replace(/\s*(GmbH & Co\.?\s*KG|GmbH|AG|e\.K\.|OHG|KG|UG)\s*$/i, "")
+    .replace(/\s+(GmbH\s*&\s*Co\.?\s*KG|gGmbH|GmbH|AG|e\.K\.|OHG|KG|UG)\s*$/i, "")
     .trim();
 }
 
@@ -710,11 +715,6 @@ async function ticketAktualisieren(ticketId, { partyId, contactId, beschreibung,
   return aktualisiert;
 }
 
-function titelCase(wort) {
-  if (!wort) return wort;
-  return wort.charAt(0).toUpperCase() + wort.slice(1).toLowerCase();
-}
-
 async function sucheTeilstringMehrereFelder(text, felder) {
   // Woerter mit weniger als 2 Buchstaben/Ziffern (z.B. ein einzelnes "-" oder "&")
   // werden verworfen - die wuerden sonst als Teilstring in sehr vielen Datensaetzen
@@ -722,12 +722,27 @@ async function sucheTeilstringMehrereFelder(text, felder) {
   const tokens = (text || "")
     .split(/\s+/)
     .filter(Boolean)
-    .filter((wort) => wort.replace(/[^\wäöüÄÖÜß]/g, "").length >= 2)
-    .map(titelCase);
+    .filter((wort) => wort.replace(/[^\wäöüÄÖÜß]/g, "").length >= 2);
   if (tokens.length === 0) return [];
 
+  // BELEGT (nicht nur vermutet): weclapps "-like"-Filter ist case-sensitiv. Der
+  // urspruengliche Bug bei "SPI A&Q gGmbH" bewies das bereits - eine Suche nach
+  // "Spi" (Title-Case) fand das komplett grossgeschriebene "SPI" NICHT, obwohl
+  // eine case-insensitive Suche das trivial gefunden haette. Deshalb werden pro
+  // Wort konsequent alle drei Schreibweisen gesucht: komplett klein, komplett
+  // GROSS und Title-Case. Das Handelsregister unterscheidet ohnehin nicht nach
+  // Gross-/Kleinschreibung - ein Firmenname kann in weclapp in jeder dieser drei
+  // Formen hinterlegt sein (normale Namen meist Title-Case wie "Musterfirma",
+  // Akronyme oft komplett GROSS wie "SPI" oder "S&P").
+  const varianten = new Set();
+  for (const wort of tokens) {
+    varianten.add(wort.toLowerCase());
+    varianten.add(wort.toUpperCase());
+    varianten.add(wort.charAt(0).toUpperCase() + wort.slice(1).toLowerCase());
+  }
+
   const promises = [];
-  for (const token of tokens) {
+  for (const token of varianten) {
     for (const feld of felder) {
       promises.push(weclappGet({ [`${feld}-like`]: `%${token}%` }));
     }
