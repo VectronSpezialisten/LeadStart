@@ -759,17 +759,74 @@ async function sucheNachFirma(companyNormalized) {
   return sucheTeilstringMehrereFelder(companyNormalized, ["company", "company2"]);
 }
 
-async function sucheNachOrt(ortNormalized) {
-  return sucheTeilstringMehrereFelder(ortNormalized, ["addresses.city"]);
+// BELEGT im weclapp-OpenAPI-Schema: das Feld "addresses" am party-Objekt ist
+// explizit "filterable": false. Serverseitige Filter wie "addresses.city-like"
+// oder "addresses.zipcode-eq" werden von der API also gar nicht unterstuetzt -
+// eine Suche darueber liefert strukturell nie zuverlaessige Treffer. Deshalb wird
+// hier - analog zur bestehenden Voll-Scan-Loesung bei der Telefonnummer-Suche
+// (siehe weclappSearchMobilePhone1) - einmalig ueber alle Parteien iteriert und
+// der Adressabgleich clientseitig in JS gemacht. Das loest gleichzeitig auch die
+// Gross-/Kleinschreibungsfrage fuer Adressfelder, weil der Vergleich selbst
+// gesteuert wird, statt auf weclapps (unbekanntes) Filterverhalten angewiesen zu sein.
+async function alleParteienMitAdressenLaden() {
+  const pageSize = 1000;
+  let page = 1;
+  let alle = [];
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = new URL(`${WECLAPP_BASE}/party`);
+    url.searchParams.set("page", page);
+    url.searchParams.set("pageSize", pageSize);
+    url.searchParams.set("properties", "id,company,company2,customerNumber,addresses,parentPartyId");
+
+    const response = await fetch(url.toString(), {
+      headers: { AuthenticationToken: process.env.WECLAPP_API_TOKEN }
+    });
+    if (!response.ok) {
+      throw new Error(`weclapp-Fehler (${response.status}) beim Laden aller Firmenadressen, Seite ${page}`);
+    }
+    const data = await response.json();
+    const results = data.result || [];
+    alle.push(...results);
+
+    hasMore = results.length === pageSize;
+    page++;
+  }
+
+  return alle;
 }
 
-async function sucheNachStrasse(strasseNormalized) {
-  return sucheTeilstringMehrereFelder(strasseNormalized, ["addresses.street1"]);
+function adressfeldEnthaeltTeilstring(party, feld, wertNormalisiertKlein) {
+  const adressen = party.addresses || [];
+  return adressen.some((a) => (a[feld] || "").toLowerCase().includes(wertNormalisiertKlein));
 }
 
-async function sucheNachPlz(plz) {
-  if (!plz) return [];
-  return weclappGet({ "addresses.zipcode-eq": plz });
+function adressfeldIstExaktGleich(party, feld, wertNormalisiertKlein) {
+  const adressen = party.addresses || [];
+  return adressen.some((a) => (a[feld] || "").toLowerCase() === wertNormalisiertKlein);
+}
+
+// Ein einziger Scan fuer Strasse/PLZ/Ort gemeinsam statt drei separaten - vermeidet
+// unnoetig dreifaches Laden aller Parteien, wenn mehrere Adressfelder ausgefuellt sind.
+async function sucheNachAdresse({ strasse, plz, ort }) {
+  const ergebnis = { strasse: [], plz: [], ort: [] };
+  if (!strasse && !plz && !ort) return ergebnis;
+
+  const parteien = await alleParteienMitAdressenLaden();
+  const strasseKlein = (strasse || "").trim().toLowerCase();
+  const plzKlein = (plz || "").trim().toLowerCase();
+  const ortKlein = (ort || "").trim().toLowerCase();
+
+  for (const party of parteien) {
+    if (strasseKlein && adressfeldEnthaeltTeilstring(party, "street1", strasseKlein)) ergebnis.strasse.push(party);
+    // PLZ bewusst als exakter Abgleich (wie zuvor "-eq"), nicht als Teilstring -
+    // eine PLZ wie "101" soll nicht "10178" und "10199" gleichermassen treffen.
+    if (plzKlein && adressfeldIstExaktGleich(party, "zipcode", plzKlein)) ergebnis.plz.push(party);
+    if (ortKlein && adressfeldEnthaeltTeilstring(party, "city", ortKlein)) ergebnis.ort.push(party);
+  }
+
+  return ergebnis;
 }
 
 function firmaKonfidenz(matchedFields) {
@@ -1024,9 +1081,7 @@ exports.handler = async (event) => {
       fixPhone2Results,
       nameResults,
       companyResults,
-      strasseResults,
-      plzResults,
-      ortResults
+      adressTreffer
     ] = await Promise.all([
       emailNormalized ? weclappGet({ "email-like": `%${emailNormalized}%` }) : [],
       phoneNormalized ? weclappSearchMobilePhone1(phoneNormalized) : [],
@@ -1035,9 +1090,7 @@ exports.handler = async (event) => {
       phoneNormalized ? weclappGet({ "fixPhone2-like": `%${phoneNormalized}%` }) : [],
       nameNormalized ? sucheNachName(nameNormalized) : [],
       companyNormalized ? sucheNachFirma(companyNormalized) : [],
-      strasse ? sucheNachStrasse(strasse) : [],
-      plz ? sucheNachPlz(plz) : [],
-      ort ? sucheNachOrt(ort) : []
+      sucheNachAdresse({ strasse, plz, ort })
     ]);
 
     const benoetigteKontaktKategorien = [];
@@ -1066,9 +1119,9 @@ exports.handler = async (event) => {
     const firmaErgebnis = auswertenFirma(
       {
         name: companyResults,
-        strasse: strasseResults,
-        plz: plzResults,
-        ort: ortResults
+        strasse: adressTreffer.strasse,
+        plz: adressTreffer.plz,
+        ort: adressTreffer.ort
       },
       benoetigteFirmaFelder
     );
